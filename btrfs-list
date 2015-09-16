@@ -1,0 +1,436 @@
+#! /usr/bin/perl
+use strict;
+use warnings;
+use Data::Dumper;
+
+#my $dev = shift;
+my @cmd;
+my %filesystems;
+my %vol;
+
+my $nosnap = shift;
+if ($nosnap and $nosnap eq '-s')
+{
+	$nosnap = 1;
+}
+else
+{
+	$nosnap = 0;
+}
+
+sub raw2human
+{
+	my $human = shift;
+	if ($human !~ /^\d+(\.\d+)?$/) { return $human; }
+	elsif ($human > 1024**6) { $human = sprintf('%.2fE', $human/1024**6); }
+	elsif ($human > 1024**5) { $human = sprintf('%.2fP', $human/1024**5); }
+	elsif ($human > 1024**4) { $human = sprintf('%.2fT', $human/1024**4); }
+	elsif ($human > 1024**3) { $human = sprintf('%.2fG', $human/1024**3); }
+	elsif ($human > 1024**2) { $human = sprintf('%.2fM', $human/1024**2); }
+	elsif ($human > 1024**1) { $human = sprintf('%.2fK', $human/1024**1); }
+	return $human;
+}
+
+@cmd = qx/btrfs --version/;
+chomp @cmd;
+$ENV{'DEBUG'} and print("> btrfs --version\n", Dumper \@cmd);
+if (not @cmd or $?)
+{
+	print STDERR "FATAL: btrfs binary not found or returned an error!\n";
+	exit 1;
+}
+my ($version) = $cmd[0] =~ /v([0-9.]+)/;
+
+if ($version lt '3.16')
+{
+	print "WARNING: you're using an old version of btrfs-progs (v$version, but v3.16+ is recommended), available information will be limited.\n";
+}
+
+@cmd = qx/uname -r/;
+chomp @cmd;
+$ENV{'DEBUG'} and print("> uname -r\n", Dumper \@cmd);
+my ($kerver) = $cmd[0] =~ /^([0-9]+\.[0-9]+)/;
+if ($kerver lt $version)
+{
+	print "WARNING: your kernel seems older (v$kerver.x) than the btrfs-progs userspace tool (v$version), some features might not be supported.\n";
+}
+
+if ($< ne 0)
+{
+	print STDERR "FATAL: you must be root to use this command\n";
+	exit 1;
+}
+
+
+=cut
+# btrfs filesystem show
+Label: 'beurre'  uuid: 010705d8-430f-4f5b-9315-12df40677e97
+Total devices 4 FS bytes used 18.23MiB
+devid    1 size 250.00MiB used 176.00MiB path /dev/loop1
+devid    2 size 250.00MiB used 164.00MiB path /dev/loop2
+devid    3 size 250.00MiB used 164.00MiB path /dev/loop3
+devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
+=cut
+
+@cmd = qx/btrfs filesystem show/;
+chomp @cmd;
+$ENV{'DEBUG'} and print("> btrfs filesystem show\n", Dumper \@cmd);
+if ($?)
+{
+	print STDERR "FATAL: btrfs filesystem show cmd failed!\n";
+	exit 1;
+}
+
+my ($label,$fuuid);
+foreach (@cmd)
+{
+	/^WARNING:/ and print and next;
+	if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/)
+	{
+		$label = $1;
+		$fuuid = $2;
+	}
+	if (defined $fuuid and m{devid\s.+path\s+(\S+)})
+	{
+    my $dev = $1;
+		if (not exists $filesystems{$fuuid})
+		{
+			$filesystems{$fuuid} = { uuid => $fuuid, label => $label, devices => [] };
+		}
+#READLINK
+		if (-l $dev)
+		{
+			@cmd = qx/readlink -f $dev/;
+			chomp @cmd;
+			$ENV{'DEBUG'} and print ">> btrfs fi show item [$dev] got readlink ".(defined $cmd[0] ? $cmd[0] : 'undef')."\n";
+			if (defined $cmd[0])
+			{
+				$dev = $cmd[0];
+			}
+		}
+		push @{ $filesystems{$fuuid}{'devices'} }, $dev;
+	}
+}
+$ENV{'DEBUG'} and print Dumper \%filesystems;
+
+# now look for the mountpoint
+
+my %mountpoints;
+open(MP, '/proc/mounts');
+while (<MP>)
+{
+	if (m{^(\S+)\s+(\S+)})
+	{
+# ugly fix for /dev/mapper/stuff being a sylink to ../dm-xxx
+		my $dev = $1;
+		my $mp = $2;
+		$mountpoints{$dev} = $mp;
+		if (-l $dev)
+		{
+			@cmd = qx/readlink -f $dev/;
+			chomp @cmd;
+			$ENV{'DEBUG'} and print ">> mounts item [$dev] got readlink ".(defined $cmd[0] ? $cmd[0] : 'undef')."\n";
+			if (defined $cmd[0])
+			{
+				$mountpoints{$cmd[0]} = $mp;
+			}
+		}
+	}
+}
+close(MP);
+
+foreach my $fuuid (keys %filesystems)
+{
+	foreach my $dev (@{ $filesystems{$fuuid}{'devices'} || [] })
+	{
+		if (exists $mountpoints{$dev})
+		{
+			$filesystems{$fuuid}{'mountpoint'} = $mountpoints{$dev};
+			last;
+		}
+	}
+}
+
+$ENV{'DEBUG'} and print Dumper \%filesystems;
+
+# lets cvol btrfs
+=cut
+ID      gen     cgen    parent  top depth       parent_uuid     received_uuid   uuid    path
+--      ---     ----    ------  ---------       -----------     -------------   ----    ----
+257     17      11      5       5               -       -       9bc47c09-fe59-4b4c-8ed6-b01a941bfd75    sub1
+=cut
+
+my $oldprog = 0;
+foreach my $fuuid (keys %filesystems)
+{
+	my $mp = $filesystems{$fuuid}{'mountpoint'};
+	defined $mp or next;
+	-d $mp or next;
+# cvol df
+	@cmd = qx/btrfs fi df --raw $mp/;
+	chomp @cmd;
+	$ENV{'DEBUG'} and print("> btrfs fi df --raw $mp\n", Dumper \@cmd);
+	if (not @cmd or $?)
+	{
+		@cmd = qx/btrfs fi df $mp/;
+		chomp @cmd;
+		$ENV{'DEBUG'} and print(">> btrfs fi df $mp\n", Dumper \@cmd);
+	}
+	my ($total,$used) = (0,0);
+	foreach (@cmd)
+	{
+		if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/)
+		{
+			#Data, RAID5: total=2977486077952, used=2962325794816
+			$total += $2;
+			$used += $3;
+			# FIXME if $2 $3 are not numbers ?
+		}
+	}
+	my $free = raw2human($total - $used);
+	$vol{$fuuid}{df} = {
+		id => '-1',
+		path => $filesystems{$fuuid}{label},
+		gen => 0,
+		cgen => 0,
+		parent => '-',
+		top => '-',
+		puuid => '*',
+		ruuid => '-', type => 'df', mode => 'rw',
+		rfer => "-",
+		excl => raw2human($used),
+		free => $free,
+	};
+
+# cvol btrfs sub list
+	@cmd = qx{btrfs sub list -pacguq $mp 2>/dev/null};
+	chomp @cmd;
+	$ENV{'DEBUG'} and print("> btrfs sub list -pacguq $mp\n", Dumper \@cmd);
+	if (not @cmd and $? ne 0)
+	{
+# old btrfsprogs...
+		$oldprog = 1;
+		@cmd = qx/btrfs sub list $mp/;
+		chomp @cmd;
+		$ENV{'DEBUG'} and print("> btrfs sub list $mp\n", Dumper \@cmd);
+		if ($?)
+		{
+			print STDERR "FATAL: btrfs sub list $mp cmd failed!\n";
+			exit 1;
+		}
+	}
+	foreach (@cmd)
+	{
+		/^WARNING:/ and print and next;
+		my $vuuid = undef;
+		if (/(\s|^)uuid ([0-9a-f-]+)/)
+		{
+			$vuuid = $2;
+			if ($vuuid eq '-')
+			{
+# old btrfs kernel, recent btrfsprogs
+				m{ID (\d+)} and $vuuid = $1;
+			}
+			$vol{$fuuid}{$vuuid}{uuid} = $vuuid;
+		}
+		elsif (/(\s|^)ID (\d+)/)
+		{
+# old btrfsprogs
+			$vuuid = $2;
+			$vol{$fuuid}{$vuuid}{uuid} = $vuuid;
+		}
+		else
+		{
+			next;
+		}
+# ID 257 gen 17 cgen 11 parent 5 top depth 5 parent_uuid - received_uuid - uuid 9bc47c09-fe59-4b4c-8ed6-b01a941bfd75 path sub1
+		$vol{$fuuid}{$vuuid}{puuid} = '-'; # old btrfsprogs don't have puuid, set a sane default
+		/(\s|^)ID (\d+)/            and $vol{$fuuid}{$vuuid}{id} = $2;
+		/(\s|^)gen (\d+)/           and $vol{$fuuid}{$vuuid}{gen} = $2;
+		/(\s|^)cgen (\d+)/          and $vol{$fuuid}{$vuuid}{cgen} = $2;
+		/(\s|^)parent (\d+)/        and $vol{$fuuid}{$vuuid}{parent} = $2;
+		/(\s|^)top_depth (\d+)/     and $vol{$fuuid}{$vuuid}{top} = $2;
+		/(\s|^)parent_uuid (\S+)/   and $vol{$fuuid}{$vuuid}{puuid} = $2;
+		/(\s|^)received_uuid (\S+)/ and $vol{$fuuid}{$vuuid}{ruuid} = $2;
+		/(\s|^)path (\S+)/          and $vol{$fuuid}{$vuuid}{path} = $2;
+		$vol{$fuuid}{$vuuid}{path} =~ s/^<FS_TREE>\///;
+		$vol{$fuuid}{$vuuid}{type} = 'subvol'; # by default, will be overriden below
+		if ($oldprog)
+		{
+			$vol{$fuuid}{$vuuid}{type} = 'vol?'; # old version can't tell vol/snap difference
+		}
+		# doesn't work with old btrfs kernel, do it other way
+		#if ($vol{$fuuid}{$vuuid}{puuid} ne '-')
+		#{
+		#	$vol{$fuuid}{$vuuid}{type} = 'snap';
+		#}
+		$vol{$fuuid}{$vuuid}{mode} = 'rw'; # by default, will be overriden below
+		$vol{$fuuid}{$vuuid}{rfer} = 0;
+		$vol{$fuuid}{$vuuid}{excl} = 0;
+	}
+	if (not $oldprog)
+	{
+		@cmd = qx/btrfs sub list -pacguqs $mp/;
+		chomp @cmd;
+		if ($?)
+		{
+			print STDERR "WARNING: btrfs sub list -pacguqs $mp cmd failed!\n";
+		}
+		foreach (@cmd)
+		{
+			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
+			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
+		}
+		@cmd = qx/btrfs sub list -pacguqr $mp/;
+		chomp @cmd;
+		if ($?)
+		{
+			print STDERR "WARNING: btrfs sub list -pacguqr $mp cmd failed!\n";
+		}
+		foreach (@cmd)
+		{
+			/^WARNING:/ and print and next;
+			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
+			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
+		}
+	}
+	$ENV{'DEBUG'} and print Dumper \$vol{$fuuid};
+}
+
+# get quota stuff
+
+=cut
+WARNING: Qgroup data inconsistent, rescan recommended
+qgroupid         rfer         excl     max_rfer     max_excl parent  child
+--------         ----         ----     --------     -------- ------  -----
+0/5           7.99MiB      7.99MiB        0.00B        0.00B ---     ---
+0/257        10.02MiB     10.01MiB        0.00B        0.00B ---     ---
+=cut
+foreach my $fuuid (keys %filesystems)
+{
+	my $mp = $filesystems{$fuuid}{'mountpoint'};
+	defined $mp or next;
+	-d $mp or next;
+	$oldprog and next;
+	@cmd = qx{btrfs qgroup show -pcre --raw $mp 2>/dev/null};
+	chomp @cmd;
+	$ENV{'DEBUG'} and print(">> btrfs qgroup show -pcre --raw $mp\n", Dumper \@cmd);
+	if (not @cmd or $?)
+	{
+		@cmd = qx/btrfs qgroup show -pcre $mp/;
+		chomp @cmd;
+		$ENV{'DEBUG'} and print(">> btrfs qgroup show -pcre $mp\n", Dumper \@cmd);
+		if (not @cmd or $?)
+		{
+			print "WARNING: can't get quota group info, either your kernel is too old, or you didn't enable quota (btrfs quota enable $mp)\n";
+			next;
+		}
+	}
+	foreach (@cmd)
+	{
+		/^WARNING:/ and print and next;
+		if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)})
+		{
+			my $qid = $1; my $id = $2; my $rfer = $3; my $excl = $4;
+			$rfer = raw2human($rfer);
+			$excl = raw2human($excl);
+			if ($id < 256)
+			{
+				if (not exists $vol{$fuuid}{$id})
+				{
+					$vol{$fuuid}{$id} = {
+						id => $id,
+						path => $filesystems{$fuuid}{mountpoint},
+						gen => 0,
+						cgen => 0,
+						parent => '-',
+						top => '-',
+						puuid => '+',
+						ruuid => '-', type => 'vol', mode => 'rw'
+					};
+				}
+				$vol{$fuuid}{$id}{rfer} = $rfer;
+				$vol{$fuuid}{$id}{excl} = $excl;
+				next;
+			}
+			foreach my $vuuid (keys %{ $vol{$fuuid} })
+			{
+				if ($id eq $vol{$fuuid}{$vuuid}{id})
+				{
+					$vol{$fuuid}{$vuuid}{rfer} = $rfer;
+					$vol{$fuuid}{$vuuid}{excl} = $excl;
+					last;
+				}
+			}
+		}
+	}
+}
+$ENV{'DEBUG'} and print Dumper \%vol;
+
+
+# ok, now, do the magic
+my @ordered = ();
+my $maxdepth = 0;
+my $biggestpath = 0;
+sub dothemagic
+{
+	my $volumes = shift;
+	my $depth = shift;
+	my $parentuuid = shift;
+	$depth > $maxdepth and $maxdepth = $depth;
+	foreach my $vuuid (sort { $volumes->{$a}{id} <=> $volumes->{$b}{id} } keys %$volumes)
+	{
+		#$ENV{'DEBUG'} and print ".."x($depth) . " working on vuuid=$vuuid with parentuuid=$parentuuid and this uuidpuuid=".$volumes->{$vuuid}{puuid}."\n";
+		if ($parentuuid eq $volumes->{$vuuid}{puuid})
+		{
+			my $hash = $volumes->{$vuuid};
+			$hash->{'depth'} = $depth;
+			length($hash->{path}) > $biggestpath and $biggestpath = length($hash->{path});
+			push @ordered, $hash;
+			dothemagic($volumes, $depth+1, $vuuid);# unless $parentuuid eq '-';
+		}
+	}
+}
+
+#print "ALRIGHT.\n";
+foreach my $fuuid (keys %filesystems)
+{
+	@ordered = ();
+	$maxdepth = 0;
+	$biggestpath = 0;
+	dothemagic($vol{$fuuid}, 0, '*');
+	dothemagic($vol{$fuuid}, 1, '+');
+	dothemagic($vol{$fuuid}, 1, '-');
+
+# find the longest path (including leading spaces)
+	my $longestpath = 0;
+	foreach (@ordered)
+	{
+		my $len = $_->{depth} * 3;
+		$len += length($_->{path});
+		$len > $longestpath and $longestpath = $len;
+	}
+
+	my $format = "%-${longestpath}s %3s %8s %9s %9s %s\n";
+	printf $format, 'PATH', 'ID', "TYPE", "REFER", "USED", "" ;
+	foreach (@ordered)
+	{
+#print Dumper $_;
+		if ($nosnap and $_->{'type'} eq 'snap') { next; }
+		my $type = $_->{type};
+		$_->{mode} eq 'ro' and $type = "ro".$type;
+		my $rfer = $_->{rfer};
+		$rfer =~ s/iB$//;
+		my $excl = $_->{excl};
+		$excl =~ s/iB$//;
+		my $free = '';
+		if (exists $_->{'free'})
+		{
+			$free = '('.$_->{'free'}.' free)';
+		}
+		printf $format,
+		       " "x($_->{depth} * 3) . $_->{path},
+		       $_->{id}, $type, $rfer, $excl, $free;
+	}
+}
+
