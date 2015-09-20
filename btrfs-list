@@ -21,8 +21,9 @@ else
 sub raw2human
 {
 	my $human = shift;
-	if ($human !~ /^\d+(\.\d+)?$/) { return $human; }
-	elsif ($human > 1024**6) { $human = sprintf('%.2fE', $human/1024**6); }
+	if ($human !~ /^(\d+)(\.\d+)?$/) { return $human; }
+	$human = $1;
+	if    ($human > 1024**6) { $human = sprintf('%.2fE', $human/1024**6); }
 	elsif ($human > 1024**5) { $human = sprintf('%.2fP', $human/1024**5); }
 	elsif ($human > 1024**4) { $human = sprintf('%.2fT', $human/1024**4); }
 	elsif ($human > 1024**3) { $human = sprintf('%.2fG', $human/1024**3); }
@@ -167,6 +168,7 @@ foreach my $fuuid (keys %filesystems)
 	defined $mp or next;
 	-d $mp or next;
 # cvol df
+	my $hasraid56 = 0;
 	@cmd = qx/btrfs fi df --raw $mp/;
 	chomp @cmd;
 	$ENV{'DEBUG'} and print("> btrfs fi df --raw $mp\n", Dumper \@cmd);
@@ -179,6 +181,7 @@ foreach my $fuuid (keys %filesystems)
 	my ($total,$used) = (0,0);
 	foreach (@cmd)
 	{
+		/RAID[56]/ and $hasraid56++;
 		if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/)
 		{
 			#Data, RAID5: total=2977486077952, used=2962325794816
@@ -196,12 +199,43 @@ foreach my $fuuid (keys %filesystems)
 		parent => '-',
 		top => '-',
 		puuid => '*',
-		ruuid => '-', type => 'df', mode => 'rw',
+		ruuid => '-', type => 'fidf', mode => 'rw',
 		rfer => "-",
 		excl => raw2human($used),
 		free => $free,
 	};
-
+# classic df for raid56
+	if ($hasraid56)
+	{
+		@cmd = qx/df --block-size=1 $mp/;
+		chomp @cmd;
+		$ENV{'DEBUG'} and print("> df --block-size=1 $mp\n", Dumper \@cmd);
+		foreach (@cmd)
+		{
+			# /dev/mapper/luks-WDC_WD30EZRX-00MMMB0_WD-WCAWZ3013164 9001772654592 3292893921280 3580264464384  48% /tank
+			if (/\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%/)
+			{
+				($total,$used,$free) = ($1,$2,$3);
+				#FIXME only for raid5 with 3 devs, TODO :
+				$used = $used / 3 * 2;
+				$free = $free / 3 * 2;
+				$vol{$fuuid}{df} = {
+					id => '-1',
+					path => $filesystems{$fuuid}{label},
+					gen => 0,
+					cgen => 0,
+					parent => '-',
+					top => '-',
+					puuid => '*',
+					ruuid => '-', type => 'df', mode => 'rw',
+					rfer => "-",
+					excl => raw2human($used),
+					free => raw2human($free),
+				};
+				last;
+			}
+		}
+	}
 # cvol btrfs sub list
 	@cmd = qx{btrfs sub list -pacguq $mp 2>/dev/null};
 	chomp @cmd;
