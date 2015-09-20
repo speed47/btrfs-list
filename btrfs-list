@@ -77,6 +77,23 @@ sub run_cmd
   return ( $child_exit_status, \@stdout, \@stderr );
 }
 
+my %readlinkcache = ();
+sub link2real
+{
+  my $dev = shift;
+  if (defined $readlinkcache{$dev})
+  {
+    return $readlinkcache{$dev};
+  }
+	my @cmd = run_cmd( { can_fail => 1 }, qw{ readlink -f }, $dev );
+  if (defined $cmd[1][0])
+  {
+    $readlinkcache{$dev} = $cmd[1][0];
+    return $readlinkcache{$dev};
+  }
+  return $dev;
+}
+
 sub raw2human
 
 {
@@ -143,11 +160,7 @@ foreach (@{ $cmd[1] })
 #READLINK
 		if (-l $dev)
 		{
-			my @subcmd = run_cmd( { can_fail => 0 }, qw{ readlink -f }, $dev );
-			if (defined $subcmd[1][0])
-			{
-				$dev = $subcmd[1][0];
-			}
+			$dev = link2real($dev);
 		}
 		push @{ $filesystems{$fuuid}{'devices'} }, $dev;
 	}
@@ -168,11 +181,7 @@ while (<MP>)
 		$mountpoints{$dev} = $mp;
 		if (-l $dev)
 		{
-			my @subcmd = run_cmd( { can_fail => 0 }, qw{ readlink -f }, $dev );
-			if (defined $subcmd[1][0])
-			{
-				$mountpoints{$subcmd[1][0]} = $mp;
-			}
+		  $mountpoints{ link2real($dev) } = $mp;
 		}
 	}
 }
