@@ -1,6 +1,8 @@
 #! /usr/bin/perl -T
 use strict;
 use warnings;
+use IPC::Open3;
+use Symbol 'gensym';
 use Data::Dumper;
 
 $ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
@@ -9,6 +11,7 @@ $ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
 my @cmd;
 my %filesystems;
 my %vol;
+my $debug = $ENV{'DEBUG'} ? 1 : 0;
 
 my $nosnap = shift;
 if ($nosnap and $nosnap eq '-s')
@@ -20,7 +23,62 @@ else
 	$nosnap = 0;
 }
 
+sub debug
+{
+  $debug or return;
+  foreach (@_)
+  {
+    print STDERR $_."\n";
+  }
+}
+
+sub run_cmd
+{
+  my $flags = shift;
+  my @args = @_;
+  my ($_stdin, $_stdout, $_stderr);
+  $_stderr = gensym;
+  debug("about to run_cmd ['".join("','", @args)."']");
+  my $pid = open3($_stdin, $_stdout, $_stderr, @args);
+  debug("waiting for cmd to complete...");
+  my @stdout = ();
+  my @stderr = ();
+  while (<$_stdout>)
+  {
+    chomp;
+    debug("stdout: ".$_);
+    /WARNING:/ and print STDERR $_."\n";
+    push @stdout, $_;
+  }
+  while (<$_stderr>)
+  {
+    chomp;
+    debug("stderr: ".$_);
+    /WARNING:/ and print STDERR $_."\n";
+    if (not $flags->{'silent_stderr'}) { print join(' ', @args).": stderr: ".$_."\n"; }
+    push @stderr, $_;
+  }
+  waitpid( $pid, 0 );
+  my $child_exit_status = $? >> 8;
+  debug("cmd return status is $child_exit_status");
+  if ($flags->{'fatal'})
+  {
+    print STDERR "FATAL: the command [".join(' ', @args)."] returned a non-zero status ($child_exit_status)\n";
+    foreach (@stdout)
+    {
+      print STDERR "FATAL: stdout: ".$_."\n";
+    }
+    foreach (@stderr)
+    {
+      print STDERR "FATAL: stdout: ".$_."\n";
+    }
+    exit 1;
+  }
+  return ( $child_exit_status, \@stdout, \@stderr );
+}
+
 sub raw2human
+
 {
 	my $human = shift;
 	if ($human !~ /^(\d+)(\.\d+)?$/) { return $human; }
@@ -34,28 +92,19 @@ sub raw2human
 	return $human;
 }
 
-@cmd = qx/btrfs --version/;
-chomp @cmd;
-$ENV{'DEBUG'} and print("> btrfs --version\n", Dumper \@cmd);
-if (not @cmd or $?)
-{
-	print STDERR "FATAL: btrfs binary not found or returned an error!\n";
-	exit 1;
-}
-my ($version) = $cmd[0] =~ /v([0-9.]+)/;
+@cmd = run_cmd({ can_fail => 0 }, qw{ btrfs --version } );
+my ($version) = $cmd[1][0] =~ /v([0-9.]+)/;
 
 if ($version lt '3.16')
 {
-	print "WARNING: you're using an old version of btrfs-progs (v$version, but v3.16+ is recommended), available information will be limited.\n";
+	print STDERR "WARNING: you're using an old version of btrfs-progs (v$version, but v3.16+ is recommended), available information will be limited.\n";
 }
 
-@cmd = qx/uname -r/;
-chomp @cmd;
-$ENV{'DEBUG'} and print("> uname -r\n", Dumper \@cmd);
-my ($kerver) = $cmd[0] =~ /^([0-9]+\.[0-9]+)/;
+@cmd = run_cmd( { can_fail => 0 }, qw{ uname -r } );
+my ($kerver) = $cmd[1][0] =~ /^([0-9]+\.[0-9]+)/;
 if ($kerver lt $version)
 {
-	print "WARNING: your kernel seems older (v$kerver.x) than the btrfs-progs userspace tool (v$version), some features might not be supported.\n";
+	print STDERR "WARNING: your kernel seems older (v$kerver.x) than the btrfs-progs userspace tool (v$version), some features might not be supported.\n";
 }
 
 if ($< ne 0)
@@ -75,19 +124,10 @@ devid    3 size 250.00MiB used 164.00MiB path /dev/loop3
 devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 =cut
 
-@cmd = qx/btrfs filesystem show/;
-chomp @cmd;
-$ENV{'DEBUG'} and print("> btrfs filesystem show\n", Dumper \@cmd);
-if ($?)
-{
-	print STDERR "FATAL: btrfs filesystem show cmd failed!\n";
-	exit 1;
-}
-
+@cmd = run_cmd({ can_fail => 0 }, qw{ btrfs filesystem show } );
 my ($label,$fuuid);
-foreach (@cmd)
+foreach (@{ $cmd[1] })
 {
-	/^WARNING:/ and print and next;
 	if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/)
 	{
 		$label = $1;
@@ -103,18 +143,16 @@ foreach (@cmd)
 #READLINK
 		if (-l $dev)
 		{
-			@cmd = qx/readlink -f $dev/;
-			chomp @cmd;
-			$ENV{'DEBUG'} and print ">> btrfs fi show item [$dev] got readlink ".(defined $cmd[0] ? $cmd[0] : 'undef')."\n";
-			if (defined $cmd[0])
+			my @subcmd = run_cmd( { can_fail => 0 }, qw{ readlink -f }, $dev );
+			if (defined $subcmd[1][0])
 			{
-				$dev = $cmd[0];
+				$dev = $subcmd[1][0];
 			}
 		}
 		push @{ $filesystems{$fuuid}{'devices'} }, $dev;
 	}
 }
-$ENV{'DEBUG'} and print Dumper \%filesystems;
+debug(Dumper \%filesystems);
 
 # now look for the mountpoint
 
@@ -130,12 +168,10 @@ while (<MP>)
 		$mountpoints{$dev} = $mp;
 		if (-l $dev)
 		{
-			@cmd = qx/readlink -f $dev/;
-			chomp @cmd;
-			$ENV{'DEBUG'} and print ">> mounts item [$dev] got readlink ".(defined $cmd[0] ? $cmd[0] : 'undef')."\n";
-			if (defined $cmd[0])
+			my @subcmd = run_cmd( { can_fail => 0 }, qw{ readlink -f }, $dev );
+			if (defined $subcmd[1][0])
 			{
-				$mountpoints{$cmd[0]} = $mp;
+				$mountpoints{$subcmd[1][0]} = $mp;
 			}
 		}
 	}
@@ -171,17 +207,13 @@ foreach my $fuuid (keys %filesystems)
 	-d $mp or next;
 # cvol df
 	my $hasraid56 = 0;
-	@cmd = qx/btrfs fi df --raw $mp/;
-	chomp @cmd;
-	$ENV{'DEBUG'} and print("> btrfs fi df --raw $mp\n", Dumper \@cmd);
-	if (not @cmd or $?)
+	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs filesystem df --raw }, $mp );
+	if (not @{ $cmd[1] } or $cmd[0])
 	{
-		@cmd = qx/btrfs fi df $mp/;
-		chomp @cmd;
-		$ENV{'DEBUG'} and print(">> btrfs fi df $mp\n", Dumper \@cmd);
+		@cmd = run_cmd( { can_fail => 0 }, qw{ btrfs filesystem df }, $mp );
 	}
 	my ($total,$used) = (0,0);
-	foreach (@cmd)
+	foreach (@{ $cmd[1] })
 	{
 		/RAID[56]/ and $hasraid56++;
 		if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/)
@@ -209,10 +241,8 @@ foreach my $fuuid (keys %filesystems)
 # classic df for raid56
 	if ($hasraid56)
 	{
-		@cmd = qx/df --block-size=1 $mp/;
-		chomp @cmd;
-		$ENV{'DEBUG'} and print("> df --block-size=1 $mp\n", Dumper \@cmd);
-		foreach (@cmd)
+		@cmd = run_cmd( { can_fail => 0 }, qw{ df --block-size=1 }, $mp);
+		foreach (@{ $cmd[1] })
 		{
 			# /dev/mapper/luks-WDC_WD30EZRX-00MMMB0_WD-WCAWZ3013164 9001772654592 3292893921280 3580264464384  48% /tank
 			if (/\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%/)
@@ -239,27 +269,17 @@ foreach my $fuuid (keys %filesystems)
 		}
 	}
 # cvol btrfs sub list
-	@cmd = qx{btrfs sub list -pacguq $mp 2>/dev/null};
-	chomp @cmd;
-	$ENV{'DEBUG'} and print("> btrfs sub list -pacguq $mp\n", Dumper \@cmd);
+	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs subvolume list -pacguq }, $mp);
 # ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9fafce5e-6f45-3b44-bf72-6f94897217d4 uuid 20b76a70-dd70-b843-8265-a321ba4a5b61 path <FS_TREE>/DELETED
 # ID 1911 gen 81668 cgen 929 parent 5 top level 5 parent_uuid - uuid aec0705e-6cae-a941-854c-d95e0a36ba2c path main
-	if (not @cmd and $? ne 0)
+	if ($cmd[0] or not @{ $cmd[1] })
 	{
 # old btrfsprogs...
 		$oldprog = 1;
-		@cmd = qx/btrfs sub list $mp/;
-		chomp @cmd;
-		$ENV{'DEBUG'} and print("> btrfs sub list $mp\n", Dumper \@cmd);
-		if ($?)
-		{
-			print STDERR "FATAL: btrfs sub list $mp cmd failed!\n";
-			exit 1;
-		}
+		@cmd = run_cmd( { can_fail => 0 }, qw{ btrfs subvolume list }, $mp);
 	}
-	foreach (@cmd)
+	foreach (@{ $cmd[1] })
 	{
-		/^WARNING:/ and print and next;
 		my $vuuid = undef;
 		if (/(\s|^)uuid ([0-9a-f-]+)/)
 		{
@@ -308,26 +328,15 @@ foreach my $fuuid (keys %filesystems)
 	}
 	if (not $oldprog)
 	{
-		@cmd = qx/btrfs sub list -pacguqs $mp/;
-		chomp @cmd;
-		if ($?)
-		{
-			print STDERR "WARNING: btrfs sub list -pacguqs $mp cmd failed!\n";
-		}
-		foreach (@cmd)
+		@cmd = run_cmd( {}, qw{ btrfs subvolume list -pacguqs }, $mp);
+		foreach (@{ $cmd[1] })
 		{
 			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
 			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
 		}
-		@cmd = qx/btrfs sub list -pacguqr $mp/;
-		chomp @cmd;
-		if ($?)
+		@cmd = run_cmd({}, qw{ btrfs subvolume list -pacguqr }, $mp);
+		foreach (@{ $cmd[1] })
 		{
-			print STDERR "WARNING: btrfs sub list -pacguqr $mp cmd failed!\n";
-		}
-		foreach (@cmd)
-		{
-			/^WARNING:/ and print and next;
 			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
 			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
 		}
@@ -351,31 +360,24 @@ foreach my $fuuid (keys %filesystems)
 	-d $mp or next;
 	$oldprog and next;
 
-	@cmd = qx{btrfs quota rescan -s $mp 2>/dev/null};
-	chomp @cmd;
-	$ENV{'DEBUG'} and print(">> btrfs quota rescan -s $mp\n", Dumper \@cmd);
-	if (@cmd and $cmd[0] =~ /operation running|current key/)
+	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs quota rescan -s }, $mp);
+	if ($cmd[1][0] and $cmd[1][0] =~ /operation running|current key/)
 	{
-		print "WARNING: a quota rescan is running, size information is not correct yet\n";
+		print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n";
 	}
 
-	@cmd = qx{btrfs qgroup show -pcre --raw $mp 2>/dev/null};
-	chomp @cmd;
-	$ENV{'DEBUG'} and print(">> btrfs qgroup show -pcre --raw $mp\n", Dumper \@cmd);
-	if (not @cmd or $?)
+	@cmd = run_cmd({ can_fail => 1, silent_stderr => 1 }, qw{ btrfs qgroup show -pcre --raw }, $mp);
+	if ($cmd[0] or not @{ $cmd[1] })
 	{
-		@cmd = qx/btrfs qgroup show -pcre $mp/;
-		chomp @cmd;
-		$ENV{'DEBUG'} and print(">> btrfs qgroup show -pcre $mp\n", Dumper \@cmd);
-		if (not @cmd or $?)
+		@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs qgroup show -pcre }, $mp);
+	  if ($cmd[0] or not @{ $cmd[1] })
 		{
-			print "WARNING: can't get quota group info, either your kernel is too old, or you didn't enable quota (btrfs quota enable $mp)\n";
+			print STDERR "WARNING: can't get quota group info, either your kernel is too old, or you didn't enable quota (btrfs quota enable $mp)\n";
 			next;
 		}
 	}
-	foreach (@cmd)
+	foreach (@{ $cmd[1] })
 	{
-		/^WARNING:/ and print and next;
 		if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)})
 		{
 			my $qid = $1; my $id = $2; my $rfer = $3; my $excl = $4;
