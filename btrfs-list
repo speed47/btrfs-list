@@ -206,6 +206,8 @@ foreach my $fuuid (keys %filesystems)
 	@cmd = qx{btrfs sub list -pacguq $mp 2>/dev/null};
 	chomp @cmd;
 	$ENV{'DEBUG'} and print("> btrfs sub list -pacguq $mp\n", Dumper \@cmd);
+# ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9fafce5e-6f45-3b44-bf72-6f94897217d4 uuid 20b76a70-dd70-b843-8265-a321ba4a5b61 path <FS_TREE>/DELETED
+# ID 1911 gen 81668 cgen 929 parent 5 top level 5 parent_uuid - uuid aec0705e-6cae-a941-854c-d95e0a36ba2c path main
 	if (not @cmd and $? ne 0)
 	{
 # old btrfsprogs...
@@ -312,6 +314,15 @@ foreach my $fuuid (keys %filesystems)
 	defined $mp or next;
 	-d $mp or next;
 	$oldprog and next;
+
+	@cmd = qx{btrfs quota rescan -s $mp 2>/dev/null};
+	chomp @cmd;
+	$ENV{'DEBUG'} and print(">> btrfs quota rescan -s $mp\n", Dumper \@cmd);
+	if (@cmd and $cmd[0] =~ /operation running|current key/)
+	{
+		print "WARNING: a quota rescan is running, size information is not correct yet\n";
+	}
+
 	@cmd = qx{btrfs qgroup show -pcre --raw $mp 2>/dev/null};
 	chomp @cmd;
 	$ENV{'DEBUG'} and print(">> btrfs qgroup show -pcre --raw $mp\n", Dumper \@cmd);
