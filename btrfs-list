@@ -1,7 +1,9 @@
-#! /usr/bin/perl
+#! /usr/bin/perl -T
 use strict;
 use warnings;
 use Data::Dumper;
+
+$ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
 
 #my $dev = shift;
 my @cmd;
