@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use IPC::Open3;
 use Symbol 'gensym';
+use Getopt::Long;
 use Data::Dumper;
 
 $ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
@@ -11,17 +12,13 @@ $ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
 my @cmd;
 my %filesystems;
 my %vol;
-my $debug = $ENV{'DEBUG'} ? 1 : 0;
 
-my $nosnap = shift;
-if ($nosnap and $nosnap eq '-s')
-{
-	$nosnap = 1;
-}
-else
-{
-	$nosnap = 0;
-}
+my $debug = 0;
+my $hide_snapshots = 0;
+GetOptions(
+	'd' => \$debug,
+	's' => \$hide_snapshots,
+);
 
 sub debug
 {
@@ -514,7 +511,7 @@ foreach my $fuuid (keys %filesystems)
 	foreach (@ordered)
 	{
 #print Dumper $_;
-		if ($nosnap and $_->{'type'} eq 'snap') { next; }
+		if ($hide_snapshots and $_->{'type'} eq 'snap') { next; }
 		my $type = $_->{type};
 		$_->{mode} eq 'ro' and $type = "ro".$type;
 		my $rfer = $_->{rfer};
