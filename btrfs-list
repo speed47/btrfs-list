@@ -154,6 +154,11 @@ foreach (@{ $cmd[1] })
 		{
 			$label = $1;
 		}
+		if ($label eq 'none')
+		{
+			# use the beggining of the uuid instead
+			$label = substr($2, 0, 8);
+		}
 	}
 	if (defined $fuuid and m{devid\s.+path\s+(\S+)})
 	{
@@ -172,9 +177,10 @@ foreach (@{ $cmd[1] })
 }
 debug(Dumper \%filesystems);
 
-# now look for the mountpoint
+# now look for the mountpoints
 
 my %mountpoints;
+my %mountpointsvol;
 open(MP, '/proc/mounts');
 while (<MP>)
 {
@@ -186,23 +192,19 @@ while (<MP>)
 		my $fstype = $3;
 		my $options = $4;
 		$fstype ne 'btrfs' and next;
-		debug(">> mounts item [$dev] mounted on $mp");
+		my $subvolid = 0;
+		($subvolid) = $options =~ /subvolid=(\d+)/;
+		debug(">> mounts item [$dev] subvolid[$subvolid] mounted on $mp");
+		
 		if ($options =~ /subvolid=(\d+)/)
 		{
-			if ($1 < 256)
-			{
-				debug(">> ... subvolid $1 so keeping it");
-				$mountpoints{$dev} = $mp;
-			}
-			else
-			{
-				debug(">> ... subvolid $1 so ignoring it");
-				next;
-			}
+			$mountpoints{$dev} = $mp;
+			$mountpointsvol{$dev}{$subvolid} = $mp;
 		}
 		if (-l $dev)
 		{
-		  $mountpoints{ link2real($dev) } = $mp;
+			$mountpoints{ link2real($dev) } = $mp;
+			$mountpointsvol{ link2real($dev) }{$subvolid} = $mp;
 		}
 	}
 }
@@ -215,6 +217,7 @@ foreach my $fuuid (keys %filesystems)
 		if (exists $mountpoints{$dev})
 		{
 			$filesystems{$fuuid}{'mountpoint'} = $mountpoints{$dev};
+			$filesystems{$fuuid}{'volmp'} = $mountpointsvol{$dev};
 			last;
 		}
 	}
@@ -235,6 +238,7 @@ foreach my $fuuid (keys %filesystems)
 	my $mp = $filesystems{$fuuid}{'mountpoint'};
 	defined $mp or next;
 	-d $mp or next;
+
 # cvol df
 	my $hasraid56 = 0;
 	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs filesystem df --raw }, $mp );
@@ -298,6 +302,19 @@ foreach my $fuuid (keys %filesystems)
 			}
 		}
 	}
+
+	# replace the free space estimation by what fi usage says
+	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs filesystem usage --raw }, $mp );
+	if (not @{ $cmd[1] } or $cmd[0])
+	{
+		@cmd = run_cmd( { can_fail => 0 }, qw{ btrfs filesystem usage }, $mp );
+	}
+	foreach (@{ $cmd[1] })
+	{
+		/Free\s*\(estimated\)\s*:\s*(\S+)/ and $free = $1;
+	}
+	$vol{$fuuid}{df}{free} = raw2human($free);
+
 # cvol btrfs sub list
 	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs subvolume list -pacguq }, $mp);
 # ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9fafce5e-6f45-3b44-bf72-6f94897217d4 uuid 20b76a70-dd70-b843-8265-a321ba4a5b61 path <FS_TREE>/DELETED
@@ -355,6 +372,7 @@ foreach my $fuuid (keys %filesystems)
 		$vol{$fuuid}{$vuuid}{mode} = 'rw'; # by default, will be overriden below
 		$vol{$fuuid}{$vuuid}{rfer} = 0;
 		$vol{$fuuid}{$vuuid}{excl} = 0;
+		$vol{$fuuid}{$vuuid}{mp} = $filesystems{$fuuid}{volmp}{ $vol{$fuuid}{$vuuid}{id} };
 	}
 	if (not $oldprog)
 	{
@@ -425,7 +443,8 @@ foreach my $fuuid (keys %filesystems)
 						parent => '-',
 						top => '-',
 						puuid => '+',
-						ruuid => '-', type => 'mainvol', mode => 'rw'
+						ruuid => '-', type => 'mainvol', mode => 'rw',
+						mp => $filesystems{$fuuid}{volmp}{5},
 					};
 				}
 				$vol{$fuuid}{$id}{rfer} = $rfer;
@@ -444,7 +463,7 @@ foreach my $fuuid (keys %filesystems)
 		}
 	}
 }
-$ENV{'DEBUG'} and print Dumper \%vol;
+$ENV{'DEBUG'} and print '@VOL@', Dumper \%vol;
 
 
 # ok, now, do the magic
@@ -502,14 +521,18 @@ foreach my $fuuid (keys %filesystems)
 		$rfer =~ s/iB$//;
 		my $excl = $_->{excl};
 		$excl =~ s/iB$//;
-		my $free = '';
+		my $extra = '';
 		if (exists $_->{'free'})
 		{
-			$free = '('.$_->{'free'}.' free)';
+			$extra = '('.$_->{'free'}.' free)';
+		}
+		elsif (defined $_->{'mp'})
+		{
+			$extra = $_->{'mp'};
 		}
 		printf $format,
 		       " "x($_->{depth} * 3) . $_->{path},
-		       $_->{id}, $type, $rfer, $excl, $free;
+		       $_->{id} > 0 ? $_->{id} : '-', $type, $rfer, $excl, $extra;
 	}
 }
 
