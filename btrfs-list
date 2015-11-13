@@ -279,7 +279,7 @@ foreach my $fuuid (keys %filesystems)
 			if (/\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%/)
 			{
 				($total,$used,$free) = ($1,$2,$3);
-				#FIXME only for raid5 with 3 devs, TODO :
+				# FIXME only for raid5 with 3 devs, TODO :
 				$used = $used / 3 * 2;
 				$free = $free / 3 * 2;
 				$vol{$fuuid}{df} = {
@@ -376,8 +376,20 @@ foreach my $fuuid (keys %filesystems)
 		@cmd = run_cmd( {}, qw{ btrfs subvolume list -pacguqs }, $mp);
 		foreach (@{ $cmd[1] })
 		{
-			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
-			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{type} = 'snap';
+			my $found = undef;
+			/(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $found = $2;
+			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $found = $2;
+			if (defined $found)
+			{
+				if ($hide_snapshots)
+				{
+					delete $vol{$fuuid}{$found};
+				}
+				else
+				{
+					$vol{$fuuid}{$found}{type} = 'snap';
+				}
+			}
 		}
 		@cmd = run_cmd({}, qw{ btrfs subvolume list -pacguqr }, $mp);
 		foreach (@{ $cmd[1] })
