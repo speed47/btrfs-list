@@ -5,6 +5,7 @@ use IPC::Open3;
 use Symbol 'gensym';
 use Getopt::Long;
 use Data::Dumper;
+use Term::ANSIColor;
 
 $ENV{'PATH'} = '/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin';
 
@@ -15,10 +16,16 @@ my %vol;
 
 my $debug = 0;
 my $hide_snapshots = 0;
+my $show_generation = 0;
+my $no_color = 0;
 GetOptions(
 	'd' => \$debug,
 	's' => \$hide_snapshots,
+	'g' => \$show_generation,
+	'no-color' => \$no_color,
 );
+
+$ENV{'ANSI_COLORS_DISABLED'} = 1 if $no_color;
 
 sub debug
 {
@@ -96,12 +103,12 @@ sub raw2human
 	my $human = shift;
 	if ($human !~ /^(\d+)(\.\d+)?$/) { return $human; }
 	$human = $1;
-	if    ($human > 1024**6) { $human = sprintf('%.2fE', $human/1024**6); }
-	elsif ($human > 1024**5) { $human = sprintf('%.2fP', $human/1024**5); }
-	elsif ($human > 1024**4) { $human = sprintf('%.2fT', $human/1024**4); }
-	elsif ($human > 1024**3) { $human = sprintf('%.2fG', $human/1024**3); }
-	elsif ($human > 1024**2) { $human = sprintf('%.2fM', $human/1024**2); }
-	elsif ($human > 1024**1) { $human = sprintf('%.2fK', $human/1024**1); }
+	   if ($human > 1024**5) { $human = colored(sprintf('%.2f', $human/1024**5), 'bright_magenta').colored('P', 'grey12'); }
+	elsif ($human > 1024**4) { $human = colored(sprintf('%.2f', $human/1024**4), 'bright_red'    ).colored('T', 'grey12'); }
+	elsif ($human > 1024**3) { $human = colored(sprintf('%.2f', $human/1024**3), 'bright_yellow' ).colored('G', 'grey12'); }
+	elsif ($human > 1024**2) { $human = colored(sprintf('%.2f', $human/1024**2), 'bright_green'  ).colored('M', 'grey12'); }
+	elsif ($human > 1024**1) { $human = colored(sprintf('%.2f', $human/1024**1), 'bright_blue'   ).colored('k', 'grey12'); }
+	else                     { $human =         sprintf('%.2f' , $human        )            ; }
 	return $human;
 }
 
@@ -195,13 +202,13 @@ while (<MP>)
 		
 		if ($options =~ /subvolid=(\d+)/)
 		{
-			$mountpoints{$dev} = $mp;
-			$mountpointsvol{$dev}{$subvolid} = $mp;
+			$mountpoints{$dev} = $mp unless $mountpoints{$dev};
+			$mountpointsvol{$dev}{$subvolid} = $mp unless $mountpointsvol{$dev}{$subvolid};
 		}
 		if (-l $dev)
 		{
-			$mountpoints{ link2real($dev) } = $mp;
-			$mountpointsvol{ link2real($dev) }{$subvolid} = $mp;
+			$mountpoints{ link2real($dev) } ||= $mp;
+			$mountpointsvol{ link2real($dev) }{$subvolid} ||= $mp;
 		}
 	}
 }
@@ -220,7 +227,7 @@ foreach my $fuuid (keys %filesystems)
 	}
 }
 
-$ENV{'DEBUG'} and print Dumper \%filesystems;
+debug(Dumper \%filesystems);
 
 # lets cvol btrfs
 =cut
@@ -237,7 +244,6 @@ foreach my $fuuid (keys %filesystems)
 	-d $mp or next;
 
 # cvol df
-	my $hasraid56 = 0;
 	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs filesystem df --raw }, $mp );
 	if (not @{ $cmd[1] } or $cmd[0])
 	{
@@ -246,7 +252,6 @@ foreach my $fuuid (keys %filesystems)
 	my ($total,$used) = (0,0);
 	foreach (@{ $cmd[1] })
 	{
-		/RAID[56]/ and $hasraid56++;
 		if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/)
 		{
 			#Data, RAID5: total=2977486077952, used=2962325794816
@@ -257,48 +262,13 @@ foreach my $fuuid (keys %filesystems)
 	}
 	my $free = raw2human($total - $used);
 	$vol{$fuuid}{df} = {
-		id => '-1',
+		id   => '-1',
 		path => $filesystems{$fuuid}{label},
-		gen => 0,
-		cgen => 0,
-		parent => '-',
-		top => '-',
-		puuid => '*',
-		ruuid => '-', type => 'fs', mode => 'rw',
-		rfer => "-",
-		excl => raw2human($used),
-		free => $free,
+		gen  => 0,    cgen  => 0,    parent => '-',
+		top  => '-',  puuid => '*',  ruuid  => '-',
+		type => 'fs', mode  => 'rw', rfer   => colored('', 'white').colored(' ', 'grey12').'-',
+		excl => raw2human($used),    free   => $free,
 	};
-# classic df for raid56
-	if ($hasraid56)
-	{
-		@cmd = run_cmd( { can_fail => 0 }, qw{ df --block-size=1 }, $mp);
-		foreach (@{ $cmd[1] })
-		{
-			# /dev/mapper/luks-WDC_WD30EZRX-00MMMB0_WD-WCAWZ3013164 9001772654592 3292893921280 3580264464384  48% /tank
-			if (/\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%/)
-			{
-				($total,$used,$free) = ($1,$2,$3);
-				# FIXME only for raid5 with 3 devs, TODO :
-				$used = $used / 3 * 2;
-				$free = $free / 3 * 2;
-				$vol{$fuuid}{df} = {
-					id => '-1',
-					path => $filesystems{$fuuid}{label},
-					gen => 0,
-					cgen => 0,
-					parent => '-',
-					top => '-',
-					puuid => '*',
-					ruuid => '-', type => 'df', mode => 'rw',
-					rfer => "-",
-					excl => raw2human($used),
-					free => raw2human($free),
-				};
-				last;
-			}
-		}
-	}
 
 	# replace the free space estimation by what fi usage says
 	@cmd = run_cmd( { can_fail => 1, silent_stderr => 1 }, qw{ btrfs filesystem usage --raw }, $mp );
@@ -398,7 +368,7 @@ foreach my $fuuid (keys %filesystems)
 			/(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
 		}
 	}
-	$ENV{'DEBUG'} and print Dumper \$vol{$fuuid};
+	debug(Dumper \$vol{$fuuid});
 }
 
 # get quota stuff
@@ -472,13 +442,14 @@ foreach my $fuuid (keys %filesystems)
 		}
 	}
 }
-$ENV{'DEBUG'} and print '@VOL@', Dumper \%vol;
+debug(Dumper \%vol);
 
 
 # ok, now, do the magic
 my @ordered = ();
 my $maxdepth = 0;
 my $biggestpath = 0;
+my %seen;
 sub dothemagic
 {
 	my $volumes = shift;
@@ -494,6 +465,7 @@ sub dothemagic
 			$hash->{'depth'} = $depth;
 			length($hash->{path}) > $biggestpath and $biggestpath = length($hash->{path});
 			push @ordered, $hash;
+			$seen{$vuuid} = 1;
 			dothemagic($volumes, $depth+1, $vuuid);# unless $parentuuid eq '-';
 		}
 	}
@@ -509,6 +481,12 @@ foreach my $fuuid (keys %filesystems)
 	dothemagic($vol{$fuuid}, 1, '+');
 	dothemagic($vol{$fuuid}, 1, '-');
 
+    foreach my $vuuid (keys %{ $vol{$fuuid} })
+    {
+        next if $seen{$vuuid};
+        push @ordered, $vol{$fuuid}{$vuuid};#print "orphan $vuuid\n";
+    } 
+
 # find the longest path (including leading spaces)
 	my $longestpath = 0;
 	foreach (@ordered)
@@ -519,11 +497,12 @@ foreach my $fuuid (keys %filesystems)
 	}
 
 	my $format = "%-${longestpath}s %5s %8s %9s %9s %s\n";
-	printf $format, 'NAME', 'ID', "TYPE", "REFER", "USED", "" ;
+	printf $format, 'NAME', 'ID', 'TYPE', 'REFER', 'USED', '';
+	$format = "%-${longestpath}s %5s %8s %33s %33s %s\n" unless $ENV{'ANSI_COLORS_DISABLED'};
 	foreach (@ordered)
 	{
 #print Dumper $_;
-		if ($hide_snapshots and $_->{'type'} eq 'snap') { next; }
+		next if ($hide_snapshots and $_->{'type'} eq 'snap');
 		my $type = $_->{type};
 		$_->{mode} eq 'ro' and $type = "ro".$type;
 		my $rfer = $_->{rfer};
@@ -539,9 +518,11 @@ foreach my $fuuid (keys %filesystems)
 		{
 			$extra = $_->{'mp'};
 		}
+	        $_->{depth} ||= 0;
 		printf $format,
-		       " "x($_->{depth} * 3) . $_->{path},
-		       $_->{id} > 0 ? $_->{id} : '-', $type, $rfer, $excl, $extra;
+		        " "x($_->{depth} * 3) . $_->{path},
+		        ($_->{id} && $_->{id} > 0) ? $_->{id} : '-',
+			$type, $rfer, $excl, $extra;
 	}
 }
 
