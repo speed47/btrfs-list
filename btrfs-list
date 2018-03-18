@@ -1,6 +1,7 @@
 #! /usr/bin/perl -T
 use strict;
 use warnings;
+use version;
 use IPC::Open3;
 use Symbol 'gensym';
 use Getopt::Long;
@@ -123,7 +124,7 @@ if ($version lt '3.16')
 @cmd = run_cmd( { can_fail => 0 }, qw{ uname -r } );
 my ($kerver) = $cmd[1][0] =~ /^(\d+\.\d+)/;
 my ($shortversion) = $version =~ /^(\d+\.\d+)/;
-if ($kerver lt $shortversion)
+if (version->declare($kerver)->numify lt version->declare($shortversion)->numify)
 {
 	print STDERR "WARNING: your kernel seems older (v$kerver.x) than the btrfs-progs userspace tool (v$version), some features might not be supported.\n";
 }
