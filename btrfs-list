@@ -36,6 +36,7 @@ my %vol;
 
 GetOptions(
     'd|debug'         => \my $opt_debug,
+    'q|quiet'         => \my $opt_quiet,
     's|hide-snap'     => \my $opt_hide_snapshots,
     'S|snap-only'     => \my $opt_only_snapshots,
     'a|show-all'      => \my $opt_show_all,
@@ -76,6 +77,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
   -d, --debug                enable debug output
+  -q, --quiet                silence the quota disabled and quota rescan warnings
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
       --no-color             synonym of --color=never
@@ -209,7 +211,7 @@ my ($version) = $cmd->{'stdout'}->[0] =~ /v([0-9.]+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify)
 {
-    print STDERR "WARNING: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (Dec 2014).\n";
+    print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (Dec 2014).\n";
     exit 1;
 }
 
@@ -485,7 +487,7 @@ foreach my $fuuid (keys %filesystems)
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs quota rescan -s }, $mp]);
     if ($cmd->{'stdout'}->[0] && $cmd->{'stdout'}->[0] =~ /operation running|current key/)
     {
-        print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n";
+        print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n" if not $opt_quiet;
     }
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre --raw }, $mp]);
@@ -494,7 +496,7 @@ foreach my $fuuid (keys %filesystems)
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{'status'} || !@{ $cmd->{'stdout'} })
         {
-            print STDERR "WARNING: to get refer/used size information, please enable qgroups (btrfs quota enable $mp)\n";
+            print STDERR "WARNING: to get refer/used size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
             next;
         }
     }
