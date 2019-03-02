@@ -36,7 +36,8 @@ my %vol;
 
 GetOptions(
     'd|debug'         => \my $opt_debug,
-    's'               => \my $opt_hide_snapshots,
+    's|hide-snap'     => \my $opt_hide_snapshots,
+    'S|snap-only'     => \my $opt_only_snapshots,
     'a|show-all'      => \my $opt_show_all,
     'show-gen'        => \my $opt_show_gen,
     'show-cgen'       => \my $opt_show_cgen,
@@ -79,7 +80,8 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                or 'auto' (default, colorize if STDOUT is a term)
       --no-color             synonym of --color=never
 
-  -s                         hide all snapshots
+  -s, --hide-snap            hide all snapshots
+  -S, --snap-only            only show snapshots
       --snap-min-used SIZE   hide snapshots taking less space than SIZE
       --snap-max-used SIZE   hide snapshots taking more space than SIZE
 
@@ -587,6 +589,7 @@ foreach my $fuuid (keys %filesystems)
     foreach (@ordered)
     {
         next if ($opt_hide_snapshots and $_->{'type'} eq 'snap');
+        next if ($opt_only_snapshots and $_->{'type'} ne 'snap');
         $_->{rfer} ||= 0;
         $_->{excl} ||= 0;
         my $type = $_->{type};
