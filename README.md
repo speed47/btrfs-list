@@ -20,6 +20,7 @@ into this:
 
 # Usage
 
+```
 Usage: btrfs-list [options] [mountpoint]
 
 If no [mountpoint] is specified, display info for all btrfs filesystems.
@@ -41,3 +42,4 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --show-uuid            show uuid of each item
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
+```
