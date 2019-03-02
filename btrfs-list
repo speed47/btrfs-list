@@ -176,7 +176,7 @@ my ($version) = $cmd->{'stdout'}->[0] =~ /v([0-9.]+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify)
 {
-    print STDERR "WARNING: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (December 2014).\n";
+    print STDERR "WARNING: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (Dec 2014).\n";
     exit 1;
 }
 

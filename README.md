@@ -1,5 +1,5 @@
 Btrfs is a great filesystem, but its userland tools are not very user-frienfly yet.
-As a long-time user, I've developed `btrfs-list` as a wrapper to make sense out of the `btrfs subvolume list` command.
+As a long-time user, I've developed `btrfs-list` as a wrapper to make sense out of the `btrfs sub list` and `btrfs qgroup show` commands.
 
 You need `btrfs-list` if either:
 - You'd like to have a nice overview of your subvolumes/snapshots
@@ -13,5 +13,5 @@ into this:
 ![btrfs_list](https://user-images.githubusercontent.com/218502/53362048-965b5d80-3939-11e9-8e2f-8f92c7db79e4.PNG)
 
 Prerequisites:
-- `btrfs-progs` v3.10 at least (Jan 2013)
-- The _quota_ feature enabled on your Btrfs filesystems (optional, to get space usage per subvolume and snapshot)
+- `btrfs-progs` v3.18 at least (Dec 2014)
+- The _quota_ feature enabled on your Btrfs filesystems (optional, to get space usage for subvolumes and snapshots)
