@@ -27,11 +27,13 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
   -d, --debug                enable debug output
+  -q, --quiet                silence the quota disabled and quota rescan warnings
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
       --no-color             synonym of --color=never
 
-  -s                         hide all snapshots
+  -s, --hide-snap            hide all snapshots
+  -S, --snap-only            only show snapshots
       --snap-min-used SIZE   hide snapshots taking less space than SIZE
       --snap-max-used SIZE   hide snapshots taking more space than SIZE
 
@@ -88,7 +90,7 @@ NAME                             ID     GEN    CGEN                             
 
 ## Get accurate free space amount
 
-For some configurations, `btrfs filesystem usage` 'Free (estimated)' section is misleading, for example in a 5-devices RAID1 setup with 4 devices of 133M and 1 device of 500M:
+For some configurations, `btrfs filesystem usage` *Free (estimated)* section is misleading, for example in a 5-devices RAID1 setup with 4 devices of 133M and 1 device of 500M:
 
 ```
 root@nas:~# btrfs-list /mnt/a
@@ -97,7 +99,7 @@ NAME          TYPE     REFER      USED MOUNTPOINT
    [main]  mainvol    16.00k    16.00k /mnt/a
 ```
 
-The *free* amount is reported by `btrfs filesystem usage`, the *realfree* is the adjusted amount by `btrfs-list`. Let's verify that we got this right:
+The *free* amount is reported by `btrfs filesystem usage`, the *realfree* is the adjusted amount by `btrfs-list`. Let's verify that we got it right:
 
 ```
 root@nas:~# dd if=/dev/urandom of=/mnt/a/big
