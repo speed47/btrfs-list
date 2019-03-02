@@ -357,11 +357,43 @@ foreach my $fuuid (keys %filesystems)
     {
         $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
     }
+    my ($seenUnallocated, $dataFree, %devFree, $isRaid1);
     foreach (@{ $cmd->{'stdout'} })
     {
         /Free\s*\(estimated\)\s*:\s*(\S+)/ and $free = $1;
+        if (m{^\s*Data ratio:\s+2\.00})
+        {
+            $isRaid1 = 1;
+        }
+        if (m{^Unallocated:})
+        {
+            $seenUnallocated = 1;
+        }
+        elsif (m{^Data,\S+: Size:(\d+), Used:(\d+)}) {
+            $dataFree = human2raw($1) - human2raw($2);
+        }
+        elsif ($seenUnallocated && m{^\s*(\S+)\s+(\d+)\s*$}) {
+            $devFree{$1} = human2raw($2) + 0;
+        }
     }
     $vol{$fuuid}{df}{free} = raw2human(human2raw($free));
+    if (%devFree && $isRaid1) {
+        my $realFree = $dataFree;
+        while (1) {
+            # FIXME is only correct for raid1 for now
+            # find the 2 dev with the higher amount of unalloc size
+            my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
+            if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB) {
+                #/$realFree += MiB * 2;
+                $realFree += MiB;
+                $devFree{$sk[0]} -= MiB;
+                $devFree{$sk[1]} -= MiB;
+                next;
+            }
+            last;
+        }
+        $vol{$fuuid}{df}{realfree} = raw2human($realFree);
+    }
 
     # cvol btrfs sub list
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs subvolume list -pacguq }, $mp]);
@@ -607,7 +639,8 @@ foreach my $fuuid (keys %filesystems)
         my $extra = '';
         if (exists $_->{'free'})
         {
-            $extra = '('.$_->{'free'}.' free)';
+            $extra  = '('.$_->{'free'}.' free)';
+            $extra .= ' ('.$_->{'realfree'}.' realfree)' if exists $_->{'realfree'};
         }
         elsif (defined $_->{'mp'})
         {

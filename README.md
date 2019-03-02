@@ -85,3 +85,32 @@ NAME                             ID     GEN    CGEN                             
       snapq222                  269      22      21 12005af8-92b4-0646-a4fa-4ff1480797ee     snap    33.03M    32.00k
       snapmulti                 270      23      22 628a9b53-003c-fb40-be89-eee5bbbbeb42     snap    33.03M    32.00k
 ```
+
+## Get accurate free space amount
+
+For some configurations, `btrfs filesystem usage` 'Free (estimated)' section is misleading, for example in a 5-devices RAID1 setup with 4 devices of 133M and 1 device of 500M:
+
+```
+root@nas:~# btrfs-list /mnt/a
+NAME          TYPE     REFER      USED MOUNTPOINT
+8c4ca5e5        fs         -     0.00  (456.44M free) (418.00M realfree)
+   [main]  mainvol    16.00k    16.00k /mnt/a
+```
+
+The *free* amount is reported by `btrfs filesystem usage`, the *realfree* is the adjusted amount by `btrfs-list`. Let's verify that we got this right:
+
+```
+root@nas:~# dd if=/dev/urandom of=/mnt/a/big
+dd: writing to '/mnt/a/big': No space left on device
+853114+0 records in
+853113+0 records out
+436793856 bytes (437 MB, 417 MiB) copied, 3.55206 s, 123 MB/s
+
+root@nas:~# ls -lh /mnt/a/big
+-rw-r--r-- 1 root root 417M Mar  2 19:31 /mnt/a/big
+
+root@nas:~# btrfs-list /mnt/a
+NAME          TYPE     REFER      USED MOUNTPOINT
+8c4ca5e5        fs         -   416.56M (39.88M free) (320.00k realfree)
+   [main]  mainvol   416.58M   416.58M /mnt/a
+```
