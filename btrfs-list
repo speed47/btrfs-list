@@ -37,7 +37,11 @@ my %vol;
 GetOptions(
     'd|debug'      => \my $opt_debug,
     's'            => \my $opt_hide_snapshots,
-    'g'            => \my $opt_generation,
+    'a|show-all'   => \my $opt_show_all,
+    'show-gen'     => \my $opt_show_gen,
+    'show-cgen'    => \my $opt_show_cgen,
+    'show-id'      => \my $opt_show_id,
+    'show-uuid'    => \my $opt_show_uuid,
     'no-color'     => \my $opt_no_color,
     'color=s'      => \my $opt_color,
     'h|help|usage' => \my $opt_help,
@@ -59,7 +63,11 @@ Usage: $0 [options] [mountpoint]
 If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -s                  hide snapshots
-  -g                  show generations (not yet implemented)
+  --show-all          show all information for each item
+  --show-gen          show generation of each item
+  --show-cgen         show generation at creation of each item
+  --show-id           show id of each item
+  --show-uuid         show uuid of each item
 
   -h, --help          display this message
   -d, --debug         enable debug output
@@ -73,6 +81,13 @@ EOF
 }
 
 help() if $opt_help;
+if ($opt_show_all)
+{
+    $opt_show_gen = 1;
+    $opt_show_cgen = 1;
+    $opt_show_id = 1;
+    $opt_show_uuid = 1;
+}
 
 my $wantedFs = shift;
 if ($wantedFs) {
@@ -525,9 +540,34 @@ foreach my $fuuid (keys %filesystems)
         $len > $longestpath and $longestpath = $len;
     }
 
-    my $format = "%-${longestpath}s %5s %8s %9s %9s %s\n";
-    printf $format, 'NAME', 'ID', 'TYPE', 'REFER', 'USED', '';
-    $format = "%-${longestpath}s %5s %8s %33s %33s %s\n" unless $ENV{'ANSI_COLORS_DISABLED'};
+    my $format = "%-${longestpath}s ";
+    my @header = qw{ NAME };
+    if ($opt_show_id)
+    {
+        $format .= "%5s ";
+        push @header, qw{ ID };
+    }
+    if ($opt_show_gen)
+    {
+        $format .= "%7s ";
+        push @header, qw{ GEN };
+    }
+    if ($opt_show_cgen)
+    {
+        $format .= "%7s ";
+        push @header, qw{ CGEN };
+    }
+    if ($opt_show_uuid)
+    {
+        $format .= "%36s ";
+        push @header, qw{ UUID };
+    }
+    my $formatnocol = $format."%8s %9s %9s %s\n";
+    $format .= "%8s ".($ENV{'ANSI_COLORS_DISABLED'} ? '%9s %9s ' : '%33s %33s ')."%s\n";
+    push @header, qw{ TYPE REFER USED MOUNTPOINT };
+
+    printf $formatnocol, @header;
+
     foreach (@ordered)
     {
         next if ($opt_hide_snapshots and $_->{'type'} eq 'snap');
@@ -547,9 +587,13 @@ foreach my $fuuid (keys %filesystems)
             $extra = $_->{'mp'};
         }
         $_->{depth} ||= 0;
-        printf $format,
-            " "x($_->{depth} * 3) . $_->{path},
-            ($_->{id} && $_->{id} > 0) ? $_->{id} : '-',
-            $type, $rfer, $excl, $extra;
+        my @fields = " "x($_->{depth} * 3) . $_->{path};
+        push @fields, $_->{id} || '-' if $opt_show_id;
+        push @fields, $_->{gen} || '-' if $opt_show_gen;
+        push @fields, $_->{cgen} || '-' if $opt_show_cgen;
+        push @fields, $_->{uuid} || '-' if $opt_show_uuid;
+        push @fields, $type, $rfer, $excl, $extra;
+        printf $format, @fields;
+        #print Dumper(\$_);
     }
 }
