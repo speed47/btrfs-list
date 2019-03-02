@@ -35,20 +35,31 @@ my %filesystems;
 my %vol;
 
 GetOptions(
-    'd|debug'      => \my $opt_debug,
-    's'            => \my $opt_hide_snapshots,
-    'a|show-all'   => \my $opt_show_all,
-    'show-gen'     => \my $opt_show_gen,
-    'show-cgen'    => \my $opt_show_cgen,
-    'show-id'      => \my $opt_show_id,
-    'show-uuid'    => \my $opt_show_uuid,
-    'no-color'     => \my $opt_no_color,
-    'color=s'      => \my $opt_color,
-    'h|help|usage' => \my $opt_help,
+    'd|debug'         => \my $opt_debug,
+    's'               => \my $opt_hide_snapshots,
+    'a|show-all'      => \my $opt_show_all,
+    'show-gen'        => \my $opt_show_gen,
+    'show-cgen'       => \my $opt_show_cgen,
+    'show-id'         => \my $opt_show_id,
+    'show-uuid'       => \my $opt_show_uuid,
+    'snap-min-used=s' => \my $opt_snap_min_used,
+    'snap-max-used=s' => \my $opt_snap_max_used,
+    'no-color'        => \my $opt_no_color,
+    'color=s'         => \my $opt_color,
+    'h|help|usage'    => \my $opt_help,
 );
 
 $opt_color = 'never' if $opt_no_color;
 $opt_color //= 'auto';
+
+if (defined $opt_snap_min_used)
+{
+    $opt_snap_min_used = human2raw($opt_snap_min_used);
+}
+if (defined $opt_snap_max_used)
+{
+    $opt_snap_max_used = human2raw($opt_snap_max_used);
+}
 
 if ($opt_color eq 'never' || ($opt_color eq 'auto' && ! -t 1))
 {
@@ -62,18 +73,23 @@ Usage: $0 [options] [mountpoint]
 
 If no [mountpoint] is specified, display info for all btrfs filesystems.
 
-  -s                  hide snapshots
-  --show-all          show all information for each item
-  --show-gen          show generation of each item
-  --show-cgen         show generation at creation of each item
-  --show-id           show id of each item
-  --show-uuid         show uuid of each item
+  -h, --help                 display this message
+  -d, --debug                enable debug output
+      --color=WHEN           colorize the output; WHEN can be 'never', 'always',
+                               or 'auto' (default, colorize if STDOUT is a term)
+      --no-color             synonym of --color=never
 
-  -h, --help          display this message
-  -d, --debug         enable debug output
-      --color=WHEN    colorize the output; WHEN can be 'never', 'always',
-                       or 'auto' (default, colorize if STDOUT is a term)
-      --no-color      synonym of --color=never
+  -s                         hide all snapshots
+      --snap-min-used SIZE   hide snapshots taking less space than SIZE
+      --snap-max-used SIZE   hide snapshots taking more space than SIZE
+
+      --show-all             show all information for each item
+      --show-gen             show generation of each item
+      --show-cgen            show generation at creation of each item
+      --show-id              show id of each item
+      --show-uuid            show uuid of each item
+
+SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 
 EOF
 ;
@@ -452,7 +468,7 @@ foreach my $fuuid (keys %filesystems)
     {
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)})
         {
-            my ($qid, $id, $rfer, $excl) = ($1, $2, raw2human($3), raw2human($4));
+            my ($qid, $id, $rfer, $excl) = ($1, $2, human2raw($3), human2raw($4));
             if ($id < 256)
             {
                 if (not exists $vol{$fuuid}{$id})
@@ -571,12 +587,20 @@ foreach my $fuuid (keys %filesystems)
     foreach (@ordered)
     {
         next if ($opt_hide_snapshots and $_->{'type'} eq 'snap');
+        $_->{rfer} ||= 0;
+        $_->{excl} ||= 0;
         my $type = $_->{type};
+        if ($opt_snap_min_used)
+        {
+            next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} < $opt_snap_min_used);
+        }
+        if ($opt_snap_max_used)
+        {
+            next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} > $opt_snap_max_used);
+        }
         $_->{mode} eq 'ro' and $type = "ro".$type;
-        my $rfer = $_->{rfer} || raw2human(0);
-        $rfer =~ s/iB$//;
-        my $excl = $_->{excl} || raw2human(0);
-        $excl =~ s/iB$//;
+        my $rfer = raw2human($_->{rfer});
+        my $excl = raw2human($_->{excl});
         my $extra = '';
         if (exists $_->{'free'})
         {
