@@ -30,27 +30,58 @@ use constant PiB => 1024**5;
 
 $ENV{'PATH'} = '/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin';
 
-#my $dev = shift;
 my $cmd;
 my %filesystems;
 my %vol;
 
-my $debug = 0;
-my $hide_snapshots = 0;
-my $show_generation = 0;
-my $no_color = 0;
 GetOptions(
-    'd' => \$debug,
-    's' => \$hide_snapshots,
-    'g' => \$show_generation,
-    'no-color' => \$no_color,
+    'd|debug'      => \my $opt_debug,
+    's'            => \my $opt_hide_snapshots,
+    'g'            => \my $opt_generation,
+    'no-color'     => \my $opt_no_color,
+    'color=s'      => \my $opt_color,
+    'h|help|usage' => \my $opt_help,
 );
 
-$ENV{'ANSI_COLORS_DISABLED'} = 1 if $no_color;
+$opt_color = 'never' if $opt_no_color;
+$opt_color //= 'auto';
+
+if ($opt_color eq 'never' || ($opt_color eq 'auto' && ! -t 1))
+{
+    $ENV{'ANSI_COLORS_DISABLED'} = 1;
+}
+
+sub help
+{
+    print <<EOF
+Usage: $0 [options] [mountpoint]
+
+If no [mountpoint] is specified, display info for all btrfs filesystems.
+
+  -s                  hide snapshots
+  -g                  show generations (not yet implemented)
+
+  -h, --help          display this message
+  -d, --debug         enable debug output
+      --color=WHEN    colorize the output; WHEN can be 'never', 'always',
+                       or 'auto' (default, colorize if STDOUT is a term)
+      --no-color      synonym of --color=never
+
+EOF
+;
+    exit 0;
+}
+
+help() if $opt_help;
+
+my $wantedFs = shift;
+if ($wantedFs) {
+    ($wantedFs) = $wantedFs =~ /^(.+)$/;
+}
 
 sub debug
 {
-    return if !$debug;
+    return if !$opt_debug;
     print STDERR $_."\n" for @_;
 }
 
@@ -165,7 +196,7 @@ devid    3 size 250.00MiB used 164.00MiB path /dev/loop3
 devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 =cut
 
-$cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }]);
+$cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
 my ($label, $fuuid);
 foreach (@{ $cmd->{'stdout'} })
 {
@@ -351,7 +382,7 @@ foreach my $fuuid (keys %filesystems)
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $found = $2;
         if (defined $found)
         {
-            if ($hide_snapshots)
+            if ($opt_hide_snapshots)
             {
                 delete $vol{$fuuid}{$found};
             }
@@ -398,7 +429,7 @@ foreach my $fuuid (keys %filesystems)
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{'status'} || !@{ $cmd->{'stdout'} })
         {
-            print STDERR "WARNING: can't get quota group info, either your kernel is too old, or you didn't enable quota (btrfs quota enable $mp)\n";
+            print STDERR "WARNING: to get refer/used size information, please enable qgroups (btrfs quota enable $mp)\n";
             next;
         }
     }
@@ -499,7 +530,7 @@ foreach my $fuuid (keys %filesystems)
     $format = "%-${longestpath}s %5s %8s %33s %33s %s\n" unless $ENV{'ANSI_COLORS_DISABLED'};
     foreach (@ordered)
     {
-        next if ($hide_snapshots and $_->{'type'} eq 'snap');
+        next if ($opt_hide_snapshots and $_->{'type'} eq 'snap');
         my $type = $_->{type};
         $_->{mode} eq 'ro' and $type = "ro".$type;
         my $rfer = $_->{rfer} || raw2human(0);
