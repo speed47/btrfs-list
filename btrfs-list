@@ -18,7 +18,7 @@ use warnings;
 use version;
 use IPC::Open3;
 use Symbol 'gensym';
-use Getopt::Long;
+use Getopt::Long qw{ :config no_ignore_case };
 use Data::Dumper;
 use Term::ANSIColor;
 
