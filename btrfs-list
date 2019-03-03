@@ -1,4 +1,4 @@
-#! /usr/bin/perl -T
+#! /usr/bin/perl
 # vim: et:ts=4:sw=4:
 #
 # SPDX-License-Identifier: GPL-2.0-only
@@ -27,8 +27,6 @@ use constant MiB => 1024**2;
 use constant GiB => 1024**3;
 use constant TiB => 1024**4;
 use constant PiB => 1024**5;
-
-$ENV{'PATH'} = '/usr/local/bin:/usr/local/sbin:/bin:/sbin:/usr/bin:/usr/sbin';
 
 my $cmd;
 my %filesystems;
