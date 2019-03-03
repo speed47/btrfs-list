@@ -505,6 +505,7 @@ foreach my $fuuid (keys %filesystems)
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)})
         {
             my ($qid, $id, $rfer, $excl) = ($1, $2, human2raw($3), human2raw($4));
+            next if $qid != 0; # only check level 0 qgroups (leafs)
             if ($id < 256)
             {
                 if (not exists $vol{$fuuid}{$id})
