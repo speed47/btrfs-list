@@ -27,15 +27,17 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
   -d, --debug                enable debug output
-  -q, --quiet                silence the quota disabled and quota rescan warnings
+  -q, --quiet                silence the quota disabled & quota rescan warnings
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
-      --no-color             synonym of --color=never
+  -n, --no-color             synonym of --color=never
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
-      --snap-min-used SIZE   hide snapshots taking less space than SIZE
-      --snap-max-used SIZE   hide snapshots taking more space than SIZE
+      --snap-min-excl SIZE   hide snapshots whose exclusively allocated extents
+                               take up less space than SIZE
+      --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
+                               take up more space than SIZE
 
       --show-all             show all information for each item
       --show-gen             show generation of each item
@@ -51,8 +53,8 @@ SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 ## Display heavy snapshots
 
 ```
-root@nas:~# btrfs-list --snap-min-used 4G --snap-only /tank
-NAME                                                          TYPE     REFER      USED MOUNTPOINT
+root@nas:~# btrfs-list --snap-min-excl 4G --snap-only /tank
+NAME                                                          TYPE     REFER      EXCL MOUNTPOINT
       backups/.snaps/skyline/20130213_231649_lastskyline    rosnap    22.52G    19.58G
       backups/.snaps/box/20171231_221207_monthly.12         rosnap    88.73G     4.96G
       backups/.snaps/box/20180130_221209_monthly.11         rosnap    91.25G     4.90G
@@ -69,7 +71,7 @@ NAME                                                          TYPE     REFER    
 
 ```
 root@nas:~# btrfs-list --show-all /mnt/a
-NAME                             ID     GEN    CGEN                                 UUID     TYPE     REFER      USED MOUNTPOINT
+NAME                             ID     GEN    CGEN                                 UUID     TYPE     REFER      EXCL MOUNTPOINT
 203be355                         -1       -       -                                    -       fs         -   134.09M (868.78M free)
    [main]                         5       -       -                                    -  mainvol    16.00k    16.00k
    sub1                         256      23       6 7e5e30e0-4e68-da46-aa38-381048b0a794   subvol    33.02M    16.00k /mnt/a/test
@@ -94,7 +96,7 @@ For some configurations, `btrfs filesystem usage` *Free (estimated)* section is 
 
 ```
 root@nas:~# btrfs-list /mnt/a
-NAME          TYPE     REFER      USED MOUNTPOINT
+NAME          TYPE     REFER      EXCL MOUNTPOINT
 8c4ca5e5        fs         -     0.00  (456.44M free) (418.00M realfree)
    [main]  mainvol    16.00k    16.00k /mnt/a
 ```
@@ -112,7 +114,7 @@ root@nas:~# ls -lh /mnt/a/big
 -rw-r--r-- 1 root root 417M Mar  2 19:31 /mnt/a/big
 
 root@nas:~# btrfs-list /mnt/a
-NAME          TYPE     REFER      USED MOUNTPOINT
+NAME          TYPE     REFER      EXCL MOUNTPOINT
 8c4ca5e5        fs         -   416.56M (39.88M free) (320.00k realfree)
    [main]  mainvol   416.58M   416.58M /mnt/a
 ```

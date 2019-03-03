@@ -35,20 +35,20 @@ my %filesystems;
 my %vol;
 
 GetOptions(
-    'd|debug'         => \my $opt_debug,
-    'q|quiet'         => \my $opt_quiet,
-    's|hide-snap'     => \my $opt_hide_snapshots,
-    'S|snap-only'     => \my $opt_only_snapshots,
-    'a|show-all'      => \my $opt_show_all,
-    'show-gen'        => \my $opt_show_gen,
-    'show-cgen'       => \my $opt_show_cgen,
-    'show-id'         => \my $opt_show_id,
-    'show-uuid'       => \my $opt_show_uuid,
-    'snap-min-used=s' => \my $opt_snap_min_used,
-    'snap-max-used=s' => \my $opt_snap_max_used,
-    'no-color'        => \my $opt_no_color,
-    'color=s'         => \my $opt_color,
-    'h|help|usage'    => \my $opt_help,
+    'd|debug'                       => \my $opt_debug,
+    'q|quiet'                       => \my $opt_quiet,
+    's|hide-snap'                   => \my $opt_hide_snapshots,
+    'S|snap-only'                   => \my $opt_only_snapshots,
+    'a|show-all'                    => \my $opt_show_all,
+    'show-gen'                      => \my $opt_show_gen,
+    'show-cgen'                     => \my $opt_show_cgen,
+    'show-id'                       => \my $opt_show_id,
+    'show-uuid'                     => \my $opt_show_uuid,
+    'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
+    'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
+    'n|no-color'                    => \my $opt_no_color,
+    'color=s'                       => \my $opt_color,
+    'h|help|usage'                  => \my $opt_help,
 );
 
 $opt_color = 'never' if $opt_no_color;
@@ -77,15 +77,17 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
   -d, --debug                enable debug output
-  -q, --quiet                silence the quota disabled and quota rescan warnings
+  -q, --quiet                silence the quota disabled & quota rescan warnings
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
-      --no-color             synonym of --color=never
+  -n, --no-color             synonym of --color=never
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
-      --snap-min-used SIZE   hide snapshots taking less space than SIZE
-      --snap-max-used SIZE   hide snapshots taking more space than SIZE
+      --snap-min-excl SIZE   hide snapshots whose exclusively allocated extents
+                               take up less space than SIZE
+      --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
+                               take up more space than SIZE
 
       --show-all             show all information for each item
       --show-gen             show generation of each item
@@ -496,7 +498,7 @@ foreach my $fuuid (keys %filesystems)
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{'status'} || !@{ $cmd->{'stdout'} })
         {
-            print STDERR "WARNING: to get refer/used size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
+            print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
             next;
         }
     }
@@ -617,7 +619,7 @@ foreach my $fuuid (keys %filesystems)
     }
     my $formatnocol = $format."%8s %9s %9s %s\n";
     $format .= "%8s ".($ENV{'ANSI_COLORS_DISABLED'} ? '%9s %9s ' : '%33s %33s ')."%s\n";
-    push @header, qw{ TYPE REFER USED MOUNTPOINT };
+    push @header, qw{ TYPE REFER EXCL MOUNTPOINT };
 
     printf $formatnocol, @header;
 
