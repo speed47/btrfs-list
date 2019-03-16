@@ -22,6 +22,7 @@ use Getopt::Long qw{ :config gnu_getopt no_ignore_case };
 use Data::Dumper;
 use Term::ANSIColor;
 
+$Data::Dumper::Sortkeys = 1;
 use constant KiB => 1024**1;
 use constant MiB => 1024**2;
 use constant GiB => 1024**3;
