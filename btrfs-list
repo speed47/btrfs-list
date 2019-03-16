@@ -89,7 +89,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
                                'raid1', 'raid10', 'raid5' or 'raid6', for
-                               realfree space calculation (default: autodetect)
+                               free space calculation (default: autodetect)
 
       --show-all             show all information for each item
       --show-gen             show generation of each item
@@ -419,7 +419,12 @@ foreach my $fuuid (keys %filesystems) {
             $realFree /= 2 if $profile eq 'dup';
         }
         $realFree += $dataFree;
-        $vol{$fuuid}{df}{realfree} = raw2human($realFree);
+        $vol{$fuuid}{df}{free} = raw2human($realFree);
+
+        # unallocatable
+        foreach (values %devFree) {
+            $vol{$fuuid}{df}{unallocatable} += ($_ - MiB) if $_ > MiB;
+        }
     }
 
     # cvol btrfs sub list
@@ -649,11 +654,15 @@ foreach my $fuuid (keys %filesystems) {
             next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} > $opt_snap_max_used);
         }
         $_->{mode} eq 'ro' and $type = "ro" . $type;
-        my $rfer  = raw2human($_->{rfer});
-        my $excl  = raw2human($_->{excl});
+        my $rfer = raw2human($_->{rfer});
+        my $excl = raw2human($_->{excl});
         my $extra = '';
         if (exists $_->{'free'}) {
-            $extra = '(' . $_->{'profile'} . ', ' . ($_->{'realfree'} || $_->{'free'}) . ' free)';
+            $extra = '(' . $_->{'profile'} . ', ' . $_->{'free'} . ' free';
+            if (exists $_->{'unallocatable'} && $_->{'unallocatable'} > MiB) {
+                $extra .= ', ' . raw2human($_->{'unallocatable'}) . ' unallocatable';
+            }
+            $extra .= ')';
         }
         elsif (defined $_->{'mp'}) {
             $extra = $_->{'mp'};
