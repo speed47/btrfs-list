@@ -185,22 +185,44 @@ sub link2real {
     return $dev;
 }
 
-sub raw2human {
-    my $raw = shift;
-    if ($raw !~ /^(\d+)(\.\d+)?$/) { return $raw; }
-    $raw = $1;
-#<<< no perltidy
-    if    ($raw > PiB) { return colored(sprintf('%.2f', $raw / PiB), 'bright_magenta') . colored('P', 'grey12'); }
-    elsif ($raw > TiB) { return colored(sprintf('%.2f', $raw / TiB), 'bright_red')     . colored('T', 'grey12'); }
-    elsif ($raw > GiB) { return colored(sprintf('%.2f', $raw / GiB), 'bright_yellow')  . colored('G', 'grey12'); }
-    elsif ($raw > MiB) { return colored(sprintf('%.2f', $raw / MiB), 'bright_green')   . colored('M', 'grey12'); }
-    elsif ($raw > KiB) { return colored(sprintf('%.2f', $raw / KiB), 'bright_blue')    . colored('k', 'grey12'); }
-    else               { return colored(sprintf('%.2f', $raw      ), 'white')          . colored(' ', 'grey12'); }
-#>>>
-}
-
+# returns a list with 5 items
+# item1: color-code before the number
+# item2: the string
+# item3: color-code after the number and before the multiplier
+# item4: the multiplier (1 char)
+# item5: color-code after the multiplier
 sub pretty_print {
-    $opt_raw ? $_[0] : raw2human($_[0]);
+    my ($raw, $mode) = @_;
+    debug("pretty_print(@_);");
+    my @c = caller(0);
+    debug(Dumper(\@c));
+    if ($opt_raw) {
+        return ('', $raw, '', '', '') if (!$mode || $raw ne 0);
+        return ('', '-', '', '', '');
+    }
+    elsif ($mode && ($raw eq '-' || $raw == 0)) {
+        return ('', '-', '', '', '') if $mode == 1;
+        return ('', '0', '', '', '') if $mode == 2;
+    }
+#<<< no perltidy
+    CORE::state ($nbcolors, $dark);
+    if (!defined $nbcolors) {
+        my $cmd = run_cmd(cmd => [qw{ tput colors }], silent_stderr => 1);
+        $nbcolors = $cmd->{stdout}->[0];
+        chomp $nbcolors;
+        $nbcolors = 8 if !$nbcolors;
+        debug("nbcolors=$nbcolors");
+        $dark = ($nbcolors <= 8 ? 'bright_black' : 'grey9');
+        # terms that don't support colors (except if --color=always)
+        $ENV{'ANSI_COLORS_DISABLED'} = 1 if ($nbcolors == -1 && $opt_color ne 'always');
+    }
+    if    ($raw > PiB) { return (color('bright_magenta'), sprintf('%.2f', $raw / PiB), color($dark), 'P', color('reset')); }
+    elsif ($raw > TiB) { return (color('bright_red')    , sprintf('%.2f', $raw / TiB), color($dark), 'T', color('reset')); }
+    elsif ($raw > GiB) { return (color('bright_yellow') , sprintf('%.2f', $raw / GiB), color($dark), 'G', color('reset')); }
+    elsif ($raw > MiB) { return (color('bright_green')  , sprintf('%.2f', $raw / MiB), color($dark), 'M', color('reset')); }
+    elsif ($raw > KiB) { return (color('bright_blue')   , sprintf('%.2f', $raw / KiB), color($dark), 'k', color('reset')); }
+    else               { return (''                     , sprintf('%.2f', $raw      ), ''          , ' ', ''            ); }
+#>>>
 }
 
 sub human2raw {
@@ -531,6 +553,7 @@ foreach my $fuuid (keys %filesystems) {
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{status} || !@{$cmd->{stdout}}) {
             print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
+            $vol{$fuuid}{df}{noquota} = 1;
 
             # let's still fill the info for the main volume
             $vol{$fuuid}{5} = {
@@ -622,6 +645,7 @@ foreach my $fuuid (keys %filesystems) {
         next if $seen{$vuuid};
         push @ordered, $vol{$fuuid}{$vuuid};
     }
+    my $noquota = $vol{$fuuid}{df}{noquota};
 
     # find the longest path (including leading spaces)
     my $longestpath = 0;
@@ -630,6 +654,7 @@ foreach my $fuuid (keys %filesystems) {
         $len += length($_->{path});
         $len > $longestpath and $longestpath = $len;
     }
+    my $pretty_print_size = ($opt_raw ? 16 : 7);
 
     my $format = "%-${longestpath}s ";
     my @header = qw{ NAME };
@@ -649,54 +674,55 @@ foreach my $fuuid (keys %filesystems) {
         $format .= "%36s ";
         push @header, qw{ UUID };
     }
-    my $pretty_print_size = 33;    # colored, human-readable
-    if ($ENV{'ANSI_COLORS_DISABLED'} && !$opt_raw) {
-        $pretty_print_size = 9;    # no-color, human-readable
+    $format .= "%8s ";
+    push @header, qw{ TYPE };
+
+    if (!$noquota) {
+        $format .= "%s%${pretty_print_size}s%s%1s%s ";
+        push @header, '', 'REFE', 'R', '', '';
+        push @header, '', 'EXCL', '', '', '', 'MOUNTPOINT';
     }
-    elsif ($opt_raw) {
-        $pretty_print_size = 16,    # raw
+    else {
+        push @header, '', 'EXC', 'L', '', '', 'MOUNTPOINT';
     }
-    my $no_color_size = $opt_raw ? 16 : 9;
 
-    my $formatnocol = $format . "%8s %" . $no_color_size . "s %" . $no_color_size . "s %s\n";
-    $format .= "%8s %" . $pretty_print_size . "s %" . $pretty_print_size . "s %s\n";
-    push @header, qw{ TYPE REFER EXCL MOUNTPOINT };
+    $format .= "%s%${pretty_print_size}s%s%1s%s %s\n";
 
-    printf $formatnocol, @header;
+    printf $format, @header;
 
-    foreach (@ordered) {
-        next if ($opt_hide_snapshots and $_->{type} eq 'snap');
-        next if ($opt_only_snapshots and $_->{type} ne 'snap');
-        $_->{rfer} ||= 0;
-        $_->{excl} ||= 0;
-        my $type = $_->{type};
+    foreach my $line (@ordered) {
+        next if ($opt_hide_snapshots and $line->{type} eq 'snap');
+        next if ($opt_only_snapshots and $line->{type} ne 'snap');
+        $line->{rfer} ||= 0;
+        $line->{excl} ||= 0;
+        my $type = $line->{type};
         if ($opt_snap_min_used) {
-            next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} < $opt_snap_min_used);
+            next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} < $opt_snap_min_used);
         }
         if ($opt_snap_max_used) {
-            next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} > $opt_snap_max_used);
+            next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} > $opt_snap_max_used);
         }
-        $_->{mode} eq 'ro' and $type = "ro" . $type;
+        $line->{mode} eq 'ro' and $type = "ro" . $type;
         my $extra = '';
-        if (exists $_->{free}) {
-            $extra = '(' . $_->{profile} . ', ' . pretty_print($_->{free}) . ' free';
-            if (exists $_->{unallocatable} && $_->{unallocatable} > MiB) {
-                $extra .= ', ' . pretty_print($_->{unallocatable}) . ' unallocatable';
+        if (exists $line->{free}) {
+            $extra = '(' . $line->{profile} . ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{free}, 2)) . ' free';
+            if (exists $line->{unallocatable} && $line->{unallocatable} > MiB) {
+                $extra .= ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{unallocatable})) . ' unallocatable';
             }
             $extra .= ')';
         }
-        elsif (defined $_->{mp}) {
-            $extra = $_->{mp};
+        elsif (defined $line->{mp}) {
+            $extra = $line->{mp};
         }
-        $_->{depth} ||= 0;
-        my @fields = " " x ($_->{depth} * 3) . $_->{path};
-        push @fields, ($_->{id} =~ /^\d+$/ ? $_->{id} : '-') if $opt_show_id;
-        push @fields, $_->{gen}  || '-' if $opt_show_gen;
-        push @fields, $_->{cgen} || '-' if $opt_show_cgen;
-        push @fields, $_->{uuid} || '-' if $opt_show_uuid;
-        push @fields, $type, pretty_print($_->{rfer}), pretty_print($_->{excl}), $extra;
+        $line->{depth} ||= 0;
+        my @fields = " " x ($line->{depth} * 3) . $line->{path};
+        push @fields, ($line->{id} =~ /^\d+$/ ? $line->{id} : '-') if $opt_show_id;
+        push @fields, $line->{gen}  || '-' if $opt_show_gen;
+        push @fields, $line->{cgen} || '-' if $opt_show_cgen;
+        push @fields, $line->{uuid} || '-' if $opt_show_uuid;
+        push @fields, $type;
+        push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
+        push @fields, pretty_print($line->{excl}, 1), $extra;
         printf $format, @fields;
-
-        #print Dumper(\$_);
     }
 }
