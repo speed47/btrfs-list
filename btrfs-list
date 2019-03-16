@@ -51,6 +51,7 @@ GetOptions(
     'color=s'                       => \my $opt_color,
     'h|help|usage'                  => \my $opt_help,
     'p|profile=s'                   => \my $opt_profile,
+    'r|raw'                         => \my $opt_raw,
 );
 
 $opt_color = 'never' if $opt_no_color;
@@ -79,6 +80,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
+  -r, --raw                  show raw numbers instead of human-readable
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
@@ -195,6 +197,10 @@ sub raw2human {
     elsif ($raw > KiB) { return colored(sprintf('%.2f', $raw / KiB), 'bright_blue')    . colored('k', 'grey12'); }
     else               { return colored(sprintf('%.2f', $raw      ), 'white')          . colored(' ', 'grey12'); }
 #>>>
+}
+
+sub pretty_print {
+    $opt_raw ? $_[0] : raw2human($_[0]);
 }
 
 sub human2raw {
@@ -330,7 +336,7 @@ foreach my $fuuid (keys %filesystems) {
             $used  += human2raw($3);
         }
     }
-    my $free = raw2human($total - $used);
+    my $free = $total - $used;
     $vol{$fuuid}{df} = {
         id     => '-1',
         path   => $filesystems{$fuuid}{label},
@@ -343,7 +349,7 @@ foreach my $fuuid (keys %filesystems) {
         type   => 'fs',
         mode   => 'rw',
         rfer   => colored('', 'white') . colored(' ', 'grey12') . '-',
-        excl   => raw2human($used),
+        excl   => $used,
         free   => $free,
     };
 
@@ -369,7 +375,7 @@ foreach my $fuuid (keys %filesystems) {
             $devFree{$1} = human2raw($2) + 0;
         }
     }
-    $vol{$fuuid}{df}{free} = raw2human(human2raw($free));
+    $vol{$fuuid}{df}{free} = human2raw($free);
 
     # cmdline override
     $profile = $opt_profile if defined $opt_profile;
@@ -419,9 +425,16 @@ foreach my $fuuid (keys %filesystems) {
             $realFree /= 2 if $profile eq 'dup';
         }
         $realFree += $dataFree;
-        $vol{$fuuid}{df}{free} = raw2human($realFree);
+        $vol{$fuuid}{df}{free} = $realFree;
 
-        # unallocatable
+        # remove 1 MiB from free, because when FS is completely full,
+        # it always shows a couple kB left (depending on the profile),
+        # even if not a single more byte can be written.
+        $vol{$fuuid}{df}{free} -= MiB;
+        # obviously if with this we're negative, then we're definitely out of space
+        $vol{$fuuid}{df}{free} = 0 if $vol{$fuuid}{df}{free} < 0;
+
+        # unallocatable space
         foreach (values %devFree) {
             $vol{$fuuid}{df}{unallocatable} += ($_ - MiB) if $_ > MiB;
         }
@@ -654,13 +667,11 @@ foreach my $fuuid (keys %filesystems) {
             next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} > $opt_snap_max_used);
         }
         $_->{mode} eq 'ro' and $type = "ro" . $type;
-        my $rfer  = raw2human($_->{rfer});
-        my $excl  = raw2human($_->{excl});
         my $extra = '';
         if (exists $_->{'free'}) {
-            $extra = '(' . $_->{'profile'} . ', ' . $_->{'free'} . ' free';
+            $extra = '(' . $_->{'profile'} . ', ' . pretty_print($_->{'free'}) . ' free';
             if (exists $_->{'unallocatable'} && $_->{'unallocatable'} > MiB) {
-                $extra .= ', ' . raw2human($_->{'unallocatable'}) . ' unallocatable';
+                $extra .= ', ' . pretty_print($_->{'unallocatable'}) . ' unallocatable';
             }
             $extra .= ')';
         }
@@ -673,7 +684,7 @@ foreach my $fuuid (keys %filesystems) {
         push @fields, $_->{gen}  || '-' if $opt_show_gen;
         push @fields, $_->{cgen} || '-' if $opt_show_cgen;
         push @fields, $_->{uuid} || '-' if $opt_show_uuid;
-        push @fields, $type, $rfer, $excl, $extra;
+        push @fields, $type, pretty_print($_->{rfer}), pretty_print($_->{excl}), $extra;
         printf $format, @fields;
 
         #print Dumper(\$_);
