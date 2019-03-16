@@ -48,6 +48,7 @@ GetOptions(
     'n|no-color'                    => \my $opt_no_color,
     'color=s'                       => \my $opt_color,
     'h|help|usage'                  => \my $opt_help,
+    'p|profile=s'                   => \my $opt_profile,
 );
 
 $opt_color = 'never' if $opt_no_color;
@@ -88,6 +89,10 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up more space than SIZE
 
+  -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
+                               'raid1', 'raid10', 'raid5' or 'raid6', for
+                               realfree space calculation (default: autodetect)
+
       --show-all             show all information for each item
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
@@ -102,6 +107,13 @@ EOF
 }
 
 help() if $opt_help;
+
+if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 raid1 raid10 raid5 raid6 }) {
+    print STDERR "FATAL: invalid argument for --profile\n";
+    help();
+    exit 1;
+}
+
 if ($opt_show_all)
 {
     $opt_show_gen = 1;
@@ -360,14 +372,15 @@ foreach my $fuuid (keys %filesystems)
     {
         $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
     }
-    my ($seenUnallocated, $dataFree, %devFree, $isRaid1);
+    my ($seenUnallocated, $dataFree, %devFree, $profile);
     foreach (@{ $cmd->{'stdout'} })
     {
         /Free\s*\(estimated\)\s*:\s*(\S+)/ and $free = $1;
-        if (m{^\s*Data ratio:\s+2\.00})
+        if (m{^\s*Data,([^:]+):})
         {
-            $isRaid1 = 1;
+            $profile = lc($1);
         }
+
         if (m{^Unallocated:})
         {
             $seenUnallocated = 1;
@@ -380,21 +393,55 @@ foreach my $fuuid (keys %filesystems)
         }
     }
     $vol{$fuuid}{df}{free} = raw2human(human2raw($free));
-    if (%devFree && $isRaid1) {
-        my $realFree = $dataFree;
-        while (1) {
-            # FIXME is only correct for raid1 for now
-            # find the 2 dev with the higher amount of unalloc size
-            my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
-            if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB) {
-                #/$realFree += MiB * 2;
-                $realFree += MiB;
-                $devFree{$sk[0]} -= MiB;
-                $devFree{$sk[1]} -= MiB;
-                next;
+
+    # cmdline override
+    $profile = $opt_profile if defined $opt_profile;
+    $vol{$fuuid}{df}{profile} = $profile;
+
+    if (defined $profile && %devFree) {
+        my $realFree;
+        if ($profile eq 'raid1') {
+            while (1) {
+                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
+                if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB) {
+                    $realFree += MiB;
+                    $devFree{$sk[0]} -= MiB;
+                    $devFree{$sk[1]} -= MiB;
+                    next;
+                }
+                last;
             }
-            last;
         }
+        elsif ($profile eq 'raid10') {
+            while (1) {
+                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
+                if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB && $devFree{$sk[2]} > MiB && $devFree{$sk[3]} > MiB) {
+                    $realFree += MiB * 2;
+                    $devFree{$sk[0]} -= MiB;
+                    $devFree{$sk[1]} -= MiB;
+                    $devFree{$sk[2]} -= MiB;
+                    $devFree{$sk[3]} -= MiB;
+                    next;
+                }
+                last;
+            }
+        }
+        elsif ($profile eq 'raid5' || $profile eq 'raid6') {
+            my $parity = ($profile eq 'raid5' ? 1 : 2);
+            while (1) {
+                my $nb = grep { $_ > MiB } values %devFree;
+                last if $nb < $parity + 1;
+                foreach my $dev (keys %devFree) {
+                    $devFree{$dev} -= MiB if $devFree{$dev} > MiB;
+                }
+                $realFree += ($nb - $parity) * MiB;
+            }
+        }
+        elsif ($profile eq 'raid0' || $profile eq 'single' || $profile eq 'dup') {
+            $realFree += $_ for values %devFree;
+            $realFree /= 2 if $profile eq 'dup';
+        }
+        $realFree += $dataFree;
         $vol{$fuuid}{df}{realfree} = raw2human($realFree);
     }
 
@@ -657,8 +704,7 @@ foreach my $fuuid (keys %filesystems)
         my $extra = '';
         if (exists $_->{'free'})
         {
-            $extra  = '('.$_->{'free'}.' free)';
-            $extra .= ' ('.$_->{'realfree'}.' realfree)' if exists $_->{'realfree'};
+            $extra = '('.$_->{'profile'}.', '.($_->{'realfree'} || $_->{'free'}).' free)';
         }
         elsif (defined $_->{'mp'})
         {
