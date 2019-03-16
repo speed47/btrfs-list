@@ -31,43 +31,6 @@ use constant GiB => 1024**3;
 use constant TiB => 1024**4;
 use constant PiB => 1024**5;
 
-my $cmd;
-my %filesystems;
-my %vol;
-
-GetOptions(
-    'd|debug'                       => \my $opt_debug,
-    'q|quiet'                       => \my $opt_quiet,
-    's|hide-snap'                   => \my $opt_hide_snapshots,
-    'S|snap-only'                   => \my $opt_only_snapshots,
-    'a|show-all'                    => \my $opt_show_all,
-    'show-gen'                      => \my $opt_show_gen,
-    'show-cgen'                     => \my $opt_show_cgen,
-    'show-id'                       => \my $opt_show_id,
-    'show-uuid'                     => \my $opt_show_uuid,
-    'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
-    'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
-    'n|no-color'                    => \my $opt_no_color,
-    'color=s'                       => \my $opt_color,
-    'h|help|usage'                  => \my $opt_help,
-    'p|profile=s'                   => \my $opt_profile,
-    'r|raw'                         => \my $opt_raw,
-);
-
-$opt_color = 'never' if $opt_no_color;
-$opt_color //= 'auto';
-
-if (defined $opt_snap_min_used) {
-    $opt_snap_min_used = human2raw($opt_snap_min_used);
-}
-if (defined $opt_snap_max_used) {
-    $opt_snap_max_used = human2raw($opt_snap_max_used);
-}
-
-if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {
-    $ENV{'ANSI_COLORS_DISABLED'} = 1;
-}
-
 sub help {
     print <<EOF;
 Usage: $0 [options] [mountpoint]
@@ -105,25 +68,24 @@ EOF
     exit 0;
 }
 
-help() if $opt_help;
-
-if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 raid1 raid10 raid5 raid6 }) {
-    print STDERR "FATAL: invalid argument for --profile\n";
-    help();
-    exit 1;
-}
-
-if ($opt_show_all) {
-    $opt_show_gen  = 1;
-    $opt_show_cgen = 1;
-    $opt_show_id   = 1;
-    $opt_show_uuid = 1;
-}
-
-my $wantedFs = shift;
-if ($wantedFs) {
-    ($wantedFs) = $wantedFs =~ /^(.+)$/;
-}
+GetOptions(
+    'd|debug'                       => \my $opt_debug,
+    'q|quiet'                       => \my $opt_quiet,
+    's|hide-snap'                   => \my $opt_hide_snapshots,
+    'S|snap-only'                   => \my $opt_only_snapshots,
+    'a|show-all'                    => \my $opt_show_all,
+    'show-gen'                      => \my $opt_show_gen,
+    'show-cgen'                     => \my $opt_show_cgen,
+    'show-id'                       => \my $opt_show_id,
+    'show-uuid'                     => \my $opt_show_uuid,
+    'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
+    'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
+    'n|no-color'                    => \my $opt_no_color,
+    'color=s'                       => \my $opt_color,
+    'h|help|usage'                  => \my $opt_help,
+    'p|profile=s'                   => \my $opt_profile,
+    'r|raw'                         => \my $opt_raw,
+);
 
 sub debug {
     return if !$opt_debug;
@@ -170,10 +132,9 @@ sub run_cmd {
     return {status => $child_exit_status, stdout => \@stdout, stderr => \@stderr};
 }
 
-my %readlinkcache = ();
-
 sub link2real {
     my $dev = shift;
+    CORE::state %readlinkcache;
     if (defined $readlinkcache{$dev}) {
         return $readlinkcache{$dev};
     }
@@ -236,7 +197,49 @@ sub human2raw {
     return $human;
 }
 
-$cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
+# MAIN
+
+# check opts
+
+$opt_color = 'never' if $opt_no_color;
+$opt_color //= 'auto';
+
+if (defined $opt_snap_min_used) {
+    $opt_snap_min_used = human2raw($opt_snap_min_used);
+}
+if (defined $opt_snap_max_used) {
+    $opt_snap_max_used = human2raw($opt_snap_max_used);
+}
+
+if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {
+    $ENV{'ANSI_COLORS_DISABLED'} = 1;
+}
+
+if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 raid1 raid10 raid5 raid6 }) {
+    print STDERR "FATAL: invalid argument for --profile\n";
+    help();
+    exit 1;
+}
+
+if ($opt_show_all) {
+    $opt_show_gen  = 1;
+    $opt_show_cgen = 1;
+    $opt_show_id   = 1;
+    $opt_show_uuid = 1;
+}
+
+help() if $opt_help;
+
+# check args
+
+my $wantedFs = shift;
+if ($wantedFs) {
+    ($wantedFs) = $wantedFs =~ /^(.+)$/;
+}
+
+# check btrfs-progs version
+
+my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
 my ($version) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify) {
@@ -249,6 +252,8 @@ if ($< != 0) {
     exit 1;
 }
 
+# get filesystems list
+
 =cut
 # btrfs filesystem show
 Label: 'beurre'  uuid: 010705d8-430f-4f5b-9315-12df40677e97
@@ -260,7 +265,7 @@ devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 =cut
 
 $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
-my ($label, $fuuid);
+my ($label, $fuuid, %filesystems);
 foreach (@{$cmd->{stdout}}) {
     if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/) {
         $label = $1;
@@ -331,34 +336,43 @@ foreach my $fuuid (keys %filesystems) {
 
 debug(Dumper \%filesystems);
 
-# lets cvol btrfs
+# now, for each filesystem we found, let's dig:
 
-=cut
-ID      gen     cgen    parent  top depth       parent_uuid     received_uuid   uuid    path
---      ---     ----    ------  ---------       -----------     -------------   ----    ----
-257     17      11      5       5               -       -       9bc47c09-fe59-4b4c-8ed6-b01a941bfd75    sub1
-=cut
-
+my %vol;
 foreach my $fuuid (keys %filesystems) {
     my $mp = $filesystems{$fuuid}{'mountpoint'};
     defined $mp or next;
     -d $mp or next;
 
-    # cvol df
-    $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem df --raw }, $mp]);
+    $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem usage --raw }, $mp]);
     if (!@{$cmd->{stdout}} || $cmd->{status}) {
-        $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem df }, $mp]);
+        $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
     }
-    my ($total, $used) = (0, 0);
+    my ($seenUnallocated, %devFree, $profile);
+    my ($total, $used, $freeEstimated) = (0, 0, 0);
     foreach (@{$cmd->{stdout}}) {
-        if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/) {
+        if (/^Data,([^:]+): Size:([^,]+), Used:(\S+)/) {
 
-            #Data, RAID5: total=2977486077952, used=2962325794816
+            #Data,RAID1: Size:9.90TiB, Used:9.61TiB
+            #Data,RAID1: Size:10881302659072, Used:10569277333504
+            $profile = lc($1);
             $total += human2raw($2);
             $used  += human2raw($3);
         }
+        elsif (/Free\s*\(estimated\)\s*:\s*(\S+)/) {
+
+            #Free (estimated):                 405441961984      (min: 405441961984)
+            #Free (estimated):            377.60GiB      (min: 377.60GiB)
+            $freeEstimated = human2raw($1);
+        }
+
+        if (m{^Unallocated:}) {
+            $seenUnallocated = 1;
+        }
+        elsif ($seenUnallocated && m{^\s*(\S+)\s+(\d+)\s*$}) {
+            $devFree{$1} = human2raw($2) + 0;
+        }
     }
-    my $free = $total - $used;
     $vol{$fuuid}{df} = {
         id     => '-1',
         path   => $filesystems{$fuuid}{label},
@@ -372,44 +386,20 @@ foreach my $fuuid (keys %filesystems) {
         mode   => 'rw',
         rfer   => '-',
         excl   => $used,
-        free   => $free,
+        free   => $total - $used,
     };
-
-    # replace the free space estimation by what fi usage says
-    $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem usage --raw }, $mp]);
-    if (!@{$cmd->{stdout}} || $cmd->{status}) {
-        $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
-    }
-    my ($seenUnallocated, $dataFree, %devFree, $profile);
-    foreach (@{$cmd->{stdout}}) {
-        /Free\s*\(estimated\)\s*:\s*(\S+)/ and $free = $1;
-        if (m{^\s*Data,([^:]+):}) {
-            $profile = lc($1);
-        }
-
-        if (m{^Unallocated:}) {
-            $seenUnallocated = 1;
-        }
-        elsif (m{^Data,\S+: Size:(\d+), Used:(\d+)}) {
-            $dataFree = human2raw($1) - human2raw($2);
-        }
-        elsif ($seenUnallocated && m{^\s*(\S+)\s+(\d+)\s*$}) {
-            $devFree{$1} = human2raw($2) + 0;
-        }
-    }
-    $vol{$fuuid}{df}{free} = human2raw($free);
 
     # cmdline override
     $profile = $opt_profile if defined $opt_profile;
     $vol{$fuuid}{df}{profile} = $profile;
 
     if (defined $profile && %devFree) {
-        my $realFree;
+        my $unallocFree = 0;
         if ($profile eq 'raid1') {
             while (1) {
                 my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
                 if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB) {
-                    $realFree += MiB;
+                    $unallocFree += MiB;
                     $devFree{$sk[0]} -= MiB;
                     $devFree{$sk[1]} -= MiB;
                     next;
@@ -421,7 +411,7 @@ foreach my $fuuid (keys %filesystems) {
             while (1) {
                 my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
                 if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB && $devFree{$sk[2]} > MiB && $devFree{$sk[3]} > MiB) {
-                    $realFree += MiB * 2;
+                    $unallocFree += MiB * 2;
                     $devFree{$sk[0]} -= MiB;
                     $devFree{$sk[1]} -= MiB;
                     $devFree{$sk[2]} -= MiB;
@@ -439,15 +429,14 @@ foreach my $fuuid (keys %filesystems) {
                 foreach my $dev (keys %devFree) {
                     $devFree{$dev} -= MiB if $devFree{$dev} > MiB;
                 }
-                $realFree += ($nb - $parity) * MiB;
+                $unallocFree += ($nb - $parity) * MiB;
             }
         }
         elsif ($profile eq 'raid0' || $profile eq 'single' || $profile eq 'dup') {
-            $realFree += $_ for values %devFree;
-            $realFree /= 2 if $profile eq 'dup';
+            $unallocFree += $_ for values %devFree;
+            $unallocFree /= 2 if $profile eq 'dup';
         }
-        $realFree += $dataFree;
-        $vol{$fuuid}{df}{free} = $realFree;
+        $vol{$fuuid}{df}{free} += $unallocFree;
 
         # remove 1 MiB from free, because when FS is completely full,
         # it always shows a couple kB left (depending on the profile),
