@@ -431,6 +431,7 @@ foreach my $fuuid (keys %filesystems) {
         # it always shows a couple kB left (depending on the profile),
         # even if not a single more byte can be written.
         $vol{$fuuid}{df}{free} -= MiB;
+
         # obviously if with this we're negative, then we're definitely out of space
         $vol{$fuuid}{df}{free} = 0 if $vol{$fuuid}{df}{free} < 0;
 
@@ -648,8 +649,17 @@ foreach my $fuuid (keys %filesystems) {
         $format .= "%36s ";
         push @header, qw{ UUID };
     }
-    my $formatnocol = $format . "%8s %9s %9s %s\n";
-    $format .= "%8s " . ($ENV{'ANSI_COLORS_DISABLED'} ? '%9s %9s ' : '%33s %33s ') . "%s\n";
+    my $pretty_print_size = 33;    # colored, human-readable
+    if ($ENV{'ANSI_COLORS_DISABLED'} && !$opt_raw) {
+        $pretty_print_size = 9;    # no-color, human-readable
+    }
+    elsif ($opt_raw) {
+        $pretty_print_size = 16,    # raw
+    }
+    my $no_color_size = $opt_raw ? 16 : 9;
+
+    my $formatnocol = $format . "%8s %" . $no_color_size . "s %" . $no_color_size . "s %s\n";
+    $format .= "%8s %" . $pretty_print_size . "s %" . $pretty_print_size . "s %s\n";
     push @header, qw{ TYPE REFER EXCL MOUNTPOINT };
 
     printf $formatnocol, @header;
