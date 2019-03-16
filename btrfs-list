@@ -666,8 +666,8 @@ foreach my $fuuid (keys %filesystems)
         }
         $_->{depth} ||= 0;
         my @fields = " "x($_->{depth} * 3) . $_->{path};
-        push @fields, $_->{id} || '-' if $opt_show_id;
-        push @fields, $_->{gen} || '-' if $opt_show_gen;
+        push @fields, ($_->{id} =~ /^\d+$/ ? $_->{id} : '-') if $opt_show_id;
+        push @fields, $_->{gen}  || '-' if $opt_show_gen;
         push @fields, $_->{cgen} || '-' if $opt_show_cgen;
         push @fields, $_->{uuid} || '-' if $opt_show_uuid;
         push @fields, $type, $rfer, $excl, $extra;
