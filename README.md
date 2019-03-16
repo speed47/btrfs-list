@@ -7,7 +7,7 @@ You need `btrfs-list` if either:
 - You'd like to have a nice overview of your subvolumes/snapshots
 - You've already used ZFS before and you're missing the _zfs list_ command
 - You're looking for exactly which snapshot to destroy to regain some space
-- You're looking for a more accurate estimation of how much space is remaining on your FS
+- You're looking for a more accurate estimation of how much space is remaining on your FS for all btrfs supported data profiles, as corner cases of raid1/raid10 are not handled well by _btrfs-progs_, and raid5/raid6 are not implemented at all yet
 
 Basically it turns this:
 ![btrfs_sub_list](https://user-images.githubusercontent.com/218502/53362053-99564e00-3939-11e9-9072-1d9ef617971f.PNG)
