@@ -178,8 +178,8 @@ sub link2real {
         return $readlinkcache{$dev};
     }
     my $cmd = run_cmd(fatal => 1, cmd => [qw{ readlink -f }, $dev]);
-    if (defined $cmd->{'stdout'}->[0]) {
-        $readlinkcache{$dev} = $cmd->{'stdout'}->[0];
+    if (defined $cmd->{stdout}->[0]) {
+        $readlinkcache{$dev} = $cmd->{stdout}->[0];
         return $readlinkcache{$dev};
     }
     return $dev;
@@ -215,7 +215,7 @@ sub human2raw {
 }
 
 $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
-my ($version) = $cmd->{'stdout'}->[0] =~ /v([0-9.]+)/;
+my ($version) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify) {
     print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (Dec 2014).\n";
@@ -239,7 +239,7 @@ devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 
 $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
 my ($label, $fuuid);
-foreach (@{$cmd->{'stdout'}}) {
+foreach (@{$cmd->{stdout}}) {
     if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/) {
         $label = $1;
         $fuuid = $2;
@@ -324,11 +324,11 @@ foreach my $fuuid (keys %filesystems) {
 
     # cvol df
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem df --raw }, $mp]);
-    if (!@{$cmd->{'stdout'}} || $cmd->{'status'}) {
+    if (!@{$cmd->{stdout}} || $cmd->{status}) {
         $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem df }, $mp]);
     }
     my ($total, $used) = (0, 0);
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         if (/^Data[^,]*, (\S+):\s+total=([^,]+), used=([^,]+)/) {
 
             #Data, RAID5: total=2977486077952, used=2962325794816
@@ -355,11 +355,11 @@ foreach my $fuuid (keys %filesystems) {
 
     # replace the free space estimation by what fi usage says
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem usage --raw }, $mp]);
-    if (!@{$cmd->{'stdout'}} || $cmd->{'status'}) {
+    if (!@{$cmd->{stdout}} || $cmd->{status}) {
         $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
     }
     my ($seenUnallocated, $dataFree, %devFree, $profile);
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         /Free\s*\(estimated\)\s*:\s*(\S+)/ and $free = $1;
         if (m{^\s*Data,([^:]+):}) {
             $profile = lc($1);
@@ -446,7 +446,7 @@ foreach my $fuuid (keys %filesystems) {
 
     # ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9fafce5e-6f45-3b44-bf72-6f94897217d4 uuid 20b76a70-dd70-b843-8265-a321ba4a5b61 path <FS_TREE>/DELETED
     # ID 1911 gen 81668 cgen 929 parent 5 top level 5 parent_uuid - uuid aec0705e-6cae-a941-854c-d95e0a36ba2c path main
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         my $vuuid = undef;
         if (/(\s|^)uuid ([0-9a-f-]+)/) {
             $vuuid = $2;
@@ -485,7 +485,7 @@ foreach my $fuuid (keys %filesystems) {
         $vol{$fuuid}{$vuuid}{mp}   = $filesystems{$fuuid}{volmp}{$vol{$fuuid}{$vuuid}{id}};
     }
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqs }, $mp]);
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         my $found = undef;
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $found = $2;
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $found = $2;
@@ -499,7 +499,7 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqr }, $mp]);
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
     }
@@ -522,14 +522,14 @@ foreach my $fuuid (keys %filesystems) {
     -d $mp or next;
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs quota rescan -s }, $mp]);
-    if ($cmd->{'stdout'}->[0] && $cmd->{'stdout'}->[0] =~ /operation running|current key/) {
+    if ($cmd->{stdout}->[0] && $cmd->{stdout}->[0] =~ /operation running|current key/) {
         print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n" if not $opt_quiet;
     }
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre --raw }, $mp]);
-    if ($cmd->{'status'} || !@{$cmd->{'stdout'}}) {
+    if ($cmd->{status} || !@{$cmd->{stdout}}) {
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
-        if ($cmd->{'status'} || !@{$cmd->{'stdout'}}) {
+        if ($cmd->{status} || !@{$cmd->{stdout}}) {
             print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
 
             # let's still fill the info for the main volume
@@ -549,7 +549,7 @@ foreach my $fuuid (keys %filesystems) {
             next;
         }
     }
-    foreach (@{$cmd->{'stdout'}}) {
+    foreach (@{$cmd->{stdout}}) {
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)}) {
             my ($qid, $id, $rfer, $excl) = ($1, $2, human2raw($3), human2raw($4));
             next if $qid != 0;    # only check level 0 qgroups (leafs)
@@ -601,7 +601,7 @@ sub dothemagic {
         debug(".." x ($depth) . " working on vuuid=$vuuid with parentuuid=$parentuuid and this uuidpuuid=" . $volumes->{$vuuid}{puuid});
         if ($parentuuid eq $volumes->{$vuuid}{puuid}) {
             my $hash = $volumes->{$vuuid};
-            $hash->{'depth'} = $depth;
+            $hash->{depth} = $depth;
             length($hash->{path}) > $biggestpath and $biggestpath = length($hash->{path});
             push @ordered, $hash;
             $seen{$vuuid} = 1;
@@ -665,8 +665,8 @@ foreach my $fuuid (keys %filesystems) {
     printf $formatnocol, @header;
 
     foreach (@ordered) {
-        next if ($opt_hide_snapshots and $_->{'type'} eq 'snap');
-        next if ($opt_only_snapshots and $_->{'type'} ne 'snap');
+        next if ($opt_hide_snapshots and $_->{type} eq 'snap');
+        next if ($opt_only_snapshots and $_->{type} ne 'snap');
         $_->{rfer} ||= 0;
         $_->{excl} ||= 0;
         my $type = $_->{type};
@@ -678,15 +678,15 @@ foreach my $fuuid (keys %filesystems) {
         }
         $_->{mode} eq 'ro' and $type = "ro" . $type;
         my $extra = '';
-        if (exists $_->{'free'}) {
-            $extra = '(' . $_->{'profile'} . ', ' . pretty_print($_->{'free'}) . ' free';
-            if (exists $_->{'unallocatable'} && $_->{'unallocatable'} > MiB) {
-                $extra .= ', ' . pretty_print($_->{'unallocatable'}) . ' unallocatable';
+        if (exists $_->{free}) {
+            $extra = '(' . $_->{profile} . ', ' . pretty_print($_->{free}) . ' free';
+            if (exists $_->{unallocatable} && $_->{unallocatable} > MiB) {
+                $extra .= ', ' . pretty_print($_->{unallocatable}) . ' unallocatable';
             }
             $extra .= ')';
         }
-        elsif (defined $_->{'mp'}) {
-            $extra = $_->{'mp'};
+        elsif (defined $_->{mp}) {
+            $extra = $_->{mp};
         }
         $_->{depth} ||= 0;
         my @fields = " " x ($_->{depth} * 3) . $_->{path};
