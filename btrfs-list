@@ -498,6 +498,20 @@ foreach my $fuuid (keys %filesystems)
         if ($cmd->{'status'} || !@{ $cmd->{'stdout'} })
         {
             print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
+            # let's still fill the info for the main volume
+            $vol{$fuuid}{5} = {
+                id     => 5,
+                path   => "[main]",
+                gen    => 0,
+                cgen   => 0,
+                parent => '-',
+                top    => '-',
+                puuid  => '+',
+                ruuid  => '-',
+                type   => 'mainvol',
+                mode   => 'rw',
+                mp     => $mp,
+            };
             next;
         }
     }
