@@ -39,6 +39,10 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up more space than SIZE
 
+  -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
+                               'raid1', 'raid10', 'raid5' or 'raid6', for
+                               realfree space calculation (default: autodetect)
+
       --show-all             show all information for each item
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
