@@ -348,7 +348,7 @@ foreach my $fuuid (keys %filesystems) {
         ruuid  => '-',
         type   => 'fs',
         mode   => 'rw',
-        rfer   => colored('', 'white') . colored(' ', 'grey12') . '-',
+        rfer   => '-',
         excl   => $used,
         free   => $free,
     };
