@@ -150,7 +150,7 @@ sub run_cmd {
     while (<$_stderr>) {
         chomp;
         debug("stderr: " . $_);
-        /WARNING:/ and print STDERR $_ . "\n";
+        /WARNING: (?!RAID56 detected, not implemented)/ and print STDERR $_ . "\n";
         if (!$silent_stderr) {
             print join(' ', @$cmd) . ": stderr: " . $_ . "\n";
         }
@@ -654,8 +654,8 @@ foreach my $fuuid (keys %filesystems) {
             next if ($type eq 'snap' && $_->{rfer} =~ /^\d+$/ && $_->{excl} > $opt_snap_max_used);
         }
         $_->{mode} eq 'ro' and $type = "ro" . $type;
-        my $rfer = raw2human($_->{rfer});
-        my $excl = raw2human($_->{excl});
+        my $rfer  = raw2human($_->{rfer});
+        my $excl  = raw2human($_->{excl});
         my $extra = '';
         if (exists $_->{'free'}) {
             $extra = '(' . $_->{'profile'} . ', ' . $_->{'free'} . ' free';
