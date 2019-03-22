@@ -395,47 +395,44 @@ foreach my $fuuid (keys %filesystems) {
 
     if (defined $profile && %devFree) {
         my $unallocFree = 0;
-        if ($profile eq 'raid1') {
-            while (1) {
-                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
-                if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB) {
-                    $unallocFree += MiB;
-                    $devFree{$sk[0]} -= MiB;
-                    $devFree{$sk[1]} -= MiB;
-                    next;
-                }
-                last;
+        my $sliceSize = TiB;
+        while (1) {
+            # reduce sliceSize if needed
+            if ($sliceSize > MiB && grep { $_ < 3 * $sliceSize } values %devFree) {
+                $sliceSize /= 2;
+                next;
             }
-        }
-        elsif ($profile eq 'raid10') {
-            while (1) {
+            if ($profile eq 'raid1') {
                 my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
-                if ($devFree{$sk[0]} > MiB && $devFree{$sk[1]} > MiB && $devFree{$sk[2]} > MiB && $devFree{$sk[3]} > MiB) {
-                    $unallocFree += MiB * 2;
-                    $devFree{$sk[0]} -= MiB;
-                    $devFree{$sk[1]} -= MiB;
-                    $devFree{$sk[2]} -= MiB;
-                    $devFree{$sk[3]} -= MiB;
-                    next;
-                }
-                last;
+                last if ($devFree{$sk[1]} <= $sliceSize);
+                $unallocFree += $sliceSize;
+                $devFree{$sk[0]} -= $sliceSize;
+                $devFree{$sk[1]} -= $sliceSize;
             }
-        }
-        elsif ($profile eq 'raid5' || $profile eq 'raid6') {
-            my $parity = ($profile eq 'raid5' ? 1 : 2);
-            while (1) {
-                my $nb = grep { $_ > MiB } values %devFree;
+            elsif ($profile eq 'raid10') {
+                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
+                last if ($devFree{$sk[3]} <= $sliceSize);
+                $unallocFree += $sliceSize * 2;
+                $devFree{$sk[0]} -= $sliceSize;
+                $devFree{$sk[1]} -= $sliceSize;
+                $devFree{$sk[2]} -= $sliceSize;
+                $devFree{$sk[3]} -= $sliceSize;
+            }
+            elsif ($profile eq 'raid5' || $profile eq 'raid6') {
+                my $parity = ($profile eq 'raid5' ? 1 : 2);
+                my $nb = grep { $_ > $sliceSize } values %devFree;
                 last if $nb < $parity + 1;
                 foreach my $dev (keys %devFree) {
-                    $devFree{$dev} -= MiB if $devFree{$dev} > MiB;
+                    $devFree{$dev} -= $sliceSize if $devFree{$dev} > $sliceSize;
                 }
-                $unallocFree += ($nb - $parity) * MiB;
+                $unallocFree += ($nb - $parity) * $sliceSize;
             }
-        }
-        elsif ($profile eq 'raid0' || $profile eq 'single' || $profile eq 'dup') {
-            $unallocFree += $_ for values %devFree;
-            $unallocFree /= 2 if $profile eq 'dup';
-            %devFree = ();
+            elsif (grep { $profile eq $_ } qw( raid0 single dup )) {
+                $unallocFree += $_ for values %devFree;
+                $unallocFree /= 2 if $profile eq 'dup';
+                %devFree = ();
+                last;
+            }
         }
         $vol{$fuuid}{df}{free} += $unallocFree;
 
