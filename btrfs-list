@@ -395,8 +395,9 @@ foreach my $fuuid (keys %filesystems) {
 
     if (defined $profile && %devFree) {
         my $unallocFree = 0;
-        my $sliceSize = TiB;
+        my $sliceSize   = TiB;
         while (1) {
+
             # reduce sliceSize if needed
             if ($sliceSize > MiB && grep { $_ < 3 * $sliceSize } values %devFree) {
                 $sliceSize /= 2;
@@ -620,6 +621,7 @@ sub dothemagic {
     }
 }
 
+my $isFirstFS = 1;
 foreach my $fuuid (keys %filesystems) {
     @ordered     = ();
     $maxdepth    = 0;
@@ -632,7 +634,8 @@ foreach my $fuuid (keys %filesystems) {
         next if $seen{$vuuid};
         push @ordered, $vol{$fuuid}{$vuuid};
     }
-    my $noquota = $vol{$fuuid}{df}{noquota};
+
+    next if !@ordered;
 
     # find the longest path (including leading spaces)
     my $longestpath = 0;
@@ -664,6 +667,7 @@ foreach my $fuuid (keys %filesystems) {
     $format .= "%8s ";
     push @header, qw{ TYPE };
 
+    my $noquota = $vol{$fuuid}{df}{noquota};
     if (!$noquota) {
         $format .= "%s%${pretty_print_size}s%s%1s%s ";
         push @header, '', 'REFE', 'R', '', '';
@@ -675,6 +679,8 @@ foreach my $fuuid (keys %filesystems) {
 
     $format .= "%s%${pretty_print_size}s%s%1s%s %s\n";
 
+    print "\n" if (!$isFirstFS);
+    $isFirstFS = 0;
     printf $format, @header;
 
     foreach my $line (@ordered) {
