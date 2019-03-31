@@ -43,6 +43,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
+  -H, --no-header            hide header from output
   -r, --raw                  show raw numbers instead of human-readable
 
   -s, --hide-snap            hide all snapshots
@@ -74,6 +75,7 @@ GetOptions(
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
     'a|show-all'                    => \my $opt_show_all,
+    'H|no-header'                   => \my $opt_no_header,
     'show-gen'                      => \my $opt_show_gen,
     'show-cgen'                     => \my $opt_show_cgen,
     'show-id'                       => \my $opt_show_id,
@@ -681,7 +683,7 @@ foreach my $fuuid (keys %filesystems) {
 
     print "\n" if (!$isFirstFS);
     $isFirstFS = 0;
-    printf $format, @header;
+    printf $format, @header if !$opt_no_header;
 
     foreach my $line (@ordered) {
         next if ($opt_hide_snapshots and $line->{type} eq 'snap');

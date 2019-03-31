@@ -31,6 +31,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
+  -H, --no-header            hide header from output
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
