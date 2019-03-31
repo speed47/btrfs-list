@@ -52,6 +52,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                take up less space than SIZE
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up more space than SIZE
+  -f, --free-space           only show free space on the filesystem
 
   -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
                                'raid1', 'raid10', 'raid5' or 'raid6', for
@@ -74,6 +75,7 @@ GetOptions(
     'q|quiet'                       => \my $opt_quiet,
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
+    'f|free-space'                  => \my $opt_free_space,
     'a|show-all'                    => \my $opt_show_all,
     'H|no-header'                   => \my $opt_no_header,
     'show-gen'                      => \my $opt_show_gen,
@@ -453,6 +455,8 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
 
+    goto FREE_SPACE_ONLY if $opt_free_space;
+
     # cvol btrfs sub list
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs subvolume list -pacguq }, $mp]);
 
@@ -623,6 +627,7 @@ sub dothemagic {
     }
 }
 
+FREE_SPACE_ONLY:
 my $isFirstFS = 1;
 foreach my $fuuid (keys %filesystems) {
     @ordered     = ();
@@ -669,7 +674,7 @@ foreach my $fuuid (keys %filesystems) {
     $format .= "%8s ";
     push @header, qw{ TYPE };
 
-    my $noquota = $vol{$fuuid}{df}{noquota};
+    my $noquota = $vol{$fuuid}{df}{noquota} || $opt_free_space;
     if (!$noquota) {
         $format .= "%s%${pretty_print_size}s%s%1s%s ";
         push @header, '', 'REFE', 'R', '', '';
