@@ -629,7 +629,7 @@ sub dothemagic {
 
 FREE_SPACE_ONLY:
 my $isFirstFS = 1;
-foreach my $fuuid (keys %filesystems) {
+foreach my $fuuid (sort keys %filesystems) {
     @ordered     = ();
     $maxdepth    = 0;
     $biggestpath = 0;
