@@ -15,3 +15,8 @@ jobs:
       run: |
         echo Add other actions to build,
         echo test, and deploy your project.
+        id
+        ps faxu
+        find .
+        which apt-get
+        apt-get install -y shellcheck
