@@ -215,7 +215,7 @@ if (defined $opt_snap_max_used) {
     $opt_snap_max_used = human2raw($opt_snap_max_used);
 }
 
-if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {
+if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {    ## no critic
     $ENV{'ANSI_COLORS_DISABLED'} = 1;
 }
 
