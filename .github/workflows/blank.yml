@@ -11,5 +11,6 @@ jobs:
     - uses: actions/checkout@v1
     - name: Run a multi-line script
       run: |
-        sudo apt-get install -y perl
+        sudo apt-get install -y perl libperl-critic-perl
         perl -c btrfs-list
+        perlcritic btrfs-list
