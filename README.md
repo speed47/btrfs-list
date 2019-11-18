@@ -1,6 +1,6 @@
 # Overview
 
-Btrfs is a great filesystem, but its userland tools are not very user-frienfly yet.
+Btrfs is a great filesystem, but its userland tools are not very user-frienfly yet!
 As a long-time user, I've developed `btrfs-list` as a wrapper to make sense out of the `btrfs sub list` and `btrfs qgroup show` commands.
 
 You need `btrfs-list` if either:
