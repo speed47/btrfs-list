@@ -455,7 +455,7 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
 
-    goto FREE_SPACE_ONLY if $opt_free_space;
+    next if $opt_free_space;
 
     # cvol btrfs sub list
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs subvolume list -pacguq }, $mp]);
@@ -536,6 +536,7 @@ foreach my $fuuid (keys %filesystems) {
     my $mp = $filesystems{$fuuid}{'mountpoint'};
     defined $mp or next;
     -d $mp or next;
+    next if $opt_free_space;
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs quota rescan -s }, $mp]);
     if ($cmd->{stdout}->[0] && $cmd->{stdout}->[0] =~ /operation running|current key/) {
@@ -627,7 +628,6 @@ sub dothemagic {
     }
 }
 
-FREE_SPACE_ONLY:
 my $isFirstFS = 1;
 foreach my $fuuid (sort keys %filesystems) {
     @ordered     = ();
