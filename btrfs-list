@@ -43,6 +43,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --color=WHEN           colorize the output; WHEN can be 'never', 'always',
                                or 'auto' (default, colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
+      --bright               use bright colors (better for dark terminals)
   -H, --no-header            hide header from output
   -r, --raw                  show raw numbers instead of human-readable
 
@@ -86,6 +87,7 @@ GetOptions(
     'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
     'n|no-color'                    => \my $opt_no_color,
     'color=s'                       => \my $opt_color,
+    'bright'                        => \my $opt_bright,
     'h|help|usage'                  => \my $opt_help,
     'p|profile=s'                   => \my $opt_profile,
     'r|raw'                         => \my $opt_raw,
@@ -170,6 +172,7 @@ sub pretty_print {
         return ('', '0', '', '', '') if $mode == 2;
     }
 #<<< no perltidy
+    my $bright = ($opt_bright ? 'bright_' : '');
     CORE::state ($nbcolors, $dark);
     if (!defined $nbcolors) {
         my $cmd = run_cmd(cmd => [qw{ tput colors }], silent_stderr => 1);
@@ -177,15 +180,15 @@ sub pretty_print {
         chomp $nbcolors;
         $nbcolors = 8 if !$nbcolors;
         debug("nbcolors=$nbcolors");
-        $dark = ($nbcolors <= 8 ? 'bright_black' : 'grey9');
+        $dark = ($nbcolors <= 8 ? "${bright}black" : 'grey9');
         # terms that don't support colors (except if --color=always)
         $ENV{'ANSI_COLORS_DISABLED'} = 1 if ($nbcolors == -1 && $opt_color ne 'always');
     }
-    if    ($raw > PiB) { return (color('bright_magenta'), sprintf('%.2f', $raw / PiB), color($dark), 'P', color('reset')); }
-    elsif ($raw > TiB) { return (color('bright_red')    , sprintf('%.2f', $raw / TiB), color($dark), 'T', color('reset')); }
-    elsif ($raw > GiB) { return (color('bright_yellow') , sprintf('%.2f', $raw / GiB), color($dark), 'G', color('reset')); }
-    elsif ($raw > MiB) { return (color('bright_green')  , sprintf('%.2f', $raw / MiB), color($dark), 'M', color('reset')); }
-    elsif ($raw > KiB) { return (color('bright_blue')   , sprintf('%.2f', $raw / KiB), color($dark), 'k', color('reset')); }
+    if    ($raw > PiB) { return (color("${bright}magenta"), sprintf('%.2f', $raw / PiB), color($dark), 'P', color('reset')); }
+    elsif ($raw > TiB) { return (color("${bright}red")    , sprintf('%.2f', $raw / TiB), color($dark), 'T', color('reset')); }
+    elsif ($raw > GiB) { return (color("${bright}yellow") , sprintf('%.2f', $raw / GiB), color($dark), 'G', color('reset')); }
+    elsif ($raw > MiB) { return (color("${bright}green")  , sprintf('%.2f', $raw / MiB), color($dark), 'M', color('reset')); }
+    elsif ($raw > KiB) { return (color("${bright}blue")   , sprintf('%.2f', $raw / KiB), color($dark), 'k', color('reset')); }
     else               { return (''                     , sprintf('%.2f', $raw      ), ''          , ' ', ''            ); }
 #>>>
 }
