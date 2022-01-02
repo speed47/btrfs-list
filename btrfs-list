@@ -503,29 +503,35 @@ foreach my $fuuid (keys %filesystems) {
         /(\s|^)received_uuid (\S+)/ and $vol{$fuuid}{$vuuid}{ruuid}  = $2;
         /(\s|^)path (\S+)/          and $vol{$fuuid}{$vuuid}{path}   = $2;
         $vol{$fuuid}{$vuuid}{path} =~ s/^<FS_TREE>\///;
-        $vol{$fuuid}{$vuuid}{type} = 'subvol';                                                # by default, will be overriden below
-        $vol{$fuuid}{$vuuid}{mode} = 'rw';                                                    # by default, will be overriden below
+        $vol{$fuuid}{$vuuid}{type} = 'subvol';                                                # by default, will be overriden below if applicable
+        $vol{$fuuid}{$vuuid}{mode} = 'rw';                                                    # by default, will be overriden below if applicable
         $vol{$fuuid}{$vuuid}{rfer} = 0;
         $vol{$fuuid}{$vuuid}{excl} = 0;
         $vol{$fuuid}{$vuuid}{mp}   = $filesystems{$fuuid}{volmp}{$vol{$fuuid}{$vuuid}{id}};
     }
 
-    $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqs }, $mp]);
+    # now, list only snapshots, we also get their otime for free
+    $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -us }, $mp]);
+
+    # ID 694 gen 30002591 cgen 30002589 top level 5 otime 2022-01-02 14:37:14 path test-backup2
     foreach (@{$cmd->{stdout}}) {
-        my $found = undef;
+        my ($found, $otime);
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $found = $2;
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $found = $2;
+        /(\s|^)otime (\S+ \S+)/ and $otime = $2;
         if (defined $found) {
             if ($opt_hide_snapshots) {
                 delete $vol{$fuuid}{$found};
             }
             else {
-                $vol{$fuuid}{$found}{type} = 'snap';
+                $vol{$fuuid}{$found}{type}  = 'snap';
+                $vol{$fuuid}{$found}{otime} = $otime if $otime;
             }
         }
     }
 
-    $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqr }, $mp]);
+    # then, list readonly snapshots
+    $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -ur }, $mp]);
     foreach (@{$cmd->{stdout}}) {
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
