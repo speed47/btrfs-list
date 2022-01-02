@@ -292,6 +292,42 @@ if ($< != 0) {
     exit 1;
 }
 
+# get moutpoint list, we'll need it several times in the script
+my @procmounts;
+my %mphash;
+open(my $procfd, '<', '/proc/mounts') or die("Couldn't open /proc/mounts: $!");
+while (<$procfd>) {
+    if (m{^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)}) {
+        push @procmounts,
+          {
+            dev     => $1,
+            mp      => $2,
+            fstype  => $3,
+            options => $4,
+          };
+        $mphash{$2} = 1;
+    }
+}
+close($procfd);
+
+# first ensure passed wantedFs is a mountpoint
+if ($wantedFs) {
+    $wantedFs =~ s{/+}{/}g;
+    $wantedFs =~ s{/$}{};
+    my $originalWantedFs = $wantedFs;
+    while (1) {
+        $wantedFs ||= '/';
+        $cmd = run_cmd(cmd => ['mountpoint', $wantedFs], silent_stderr => 1);
+        if ($cmd->{'status'} != 0) {
+            next if ($wantedFs =~ s{/[^/]+$}{});
+            last;
+        }
+        last;
+    }
+
+    debug("done, wantedFs=$wantedFs ori=$originalWantedFs");
+}
+
 # get filesystems list
 
 =cut
@@ -336,39 +372,33 @@ debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
 
 # now look for the mountpoints
 
-my %mountpoints;
-my %mountpointsvol;
-open(my $procfd, '<', '/proc/mounts');
-while (<$procfd>) {
-    if (m{^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)}) {
+my %dev2mp;
+my %volid2mp;
+foreach my $line (@procmounts) {
 
-        # ugly fix for /dev/mapper/stuff being a sylink to ../dm-xxx
-        my $dev     = $1;
-        my $mp      = $2;
-        my $fstype  = $3;
-        my $options = $4;
-        next if $fstype ne 'btrfs';
-        my $subvolid = 0;
-        ($subvolid) = $options =~ /subvolid=(\d+)/;
-        debug(">> mounts item [$dev] subvolid[$subvolid] mounted on $mp");
+    # fix for /dev/mapper/stuff being a sylink to ../dm-xxx
+    next if $line->{fstype} ne 'btrfs';
+    my $subvolid = 0;
+    ($subvolid) = $line->{options} =~ /subvolid=(\d+)/;
+    debug(">> mounts item [$line->{dev}] subvolid[$subvolid] mounted on $line->{mp}");
 
-        if ($options =~ /subvolid=(\d+)/) {
-            $mountpoints{$dev} = $mp unless $mountpoints{$dev};
-            $mountpointsvol{$dev}{$subvolid} = $mp unless $mountpointsvol{$dev}{$subvolid};
-        }
-        if (-l $dev) {
-            $mountpoints{link2real($dev)} ||= $mp;
-            $mountpointsvol{link2real($dev)}{$subvolid} ||= $mp;
-        }
+    # ||=: we might have bind mounts and such, just take the first occurence
+    if ($line->{options} =~ /subvolid=(\d+)/) {
+        $dev2mp{$line->{dev}} ||= $line->{mp};
+        $volid2mp{$line->{dev}}{$subvolid} ||= $line->{mp};
+    }
+    if (-l $line->{dev}) {
+        my $real = link2real($line->{dev});
+        $dev2mp{$real} ||= $line->{mp};
+        $volid2mp{$real}{$subvolid} ||= $line->{mp};
     }
 }
-close($procfd);
 
 foreach my $fuuid (keys %filesystems) {
     foreach my $dev (@{$filesystems{$fuuid}{'devices'} || []}) {
-        if (exists $mountpoints{$dev}) {
-            $filesystems{$fuuid}{'mountpoint'} = $mountpoints{$dev};
-            $filesystems{$fuuid}{'volmp'}      = $mountpointsvol{$dev};
+        if (exists $dev2mp{$dev}) {
+            $filesystems{$fuuid}{'mountpoint'} = $dev2mp{$dev};
+            $filesystems{$fuuid}{'volmp'}      = $volid2mp{$dev};
             last;
         }
     }
