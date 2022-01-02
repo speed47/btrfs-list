@@ -62,11 +62,12 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                'raid1', 'raid10', 'raid5' or 'raid6', for
                                free space calculation (default: autodetect)
 
-      --show-all             show all information for each item
+  -a, --show-all             show all information for each item
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
       --show-id              show id of each item
       --show-uuid            show uuid of each item
+      --show-otime           show snap creation time
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 
@@ -86,6 +87,7 @@ GetOptions(
     'show-cgen'                     => \my $opt_show_cgen,
     'show-id'                       => \my $opt_show_id,
     'show-uuid'                     => \my $opt_show_uuid,
+    'show-otime'                    => \my $opt_show_otime,
     'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
     'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
     'n|no-color'                    => \my $opt_no_color,
@@ -242,10 +244,11 @@ if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 ra
 }
 
 if ($opt_show_all) {
-    $opt_show_gen  = 1;
-    $opt_show_cgen = 1;
-    $opt_show_id   = 1;
-    $opt_show_uuid = 1;
+    $opt_show_gen   = 1;
+    $opt_show_cgen  = 1;
+    $opt_show_id    = 1;
+    $opt_show_uuid  = 1;
+    $opt_show_otime = 1;
 }
 
 if ($opt_btrfs_binary && !-f -x $opt_btrfs_binary) {
@@ -717,6 +720,10 @@ foreach my $fuuid (sort keys %filesystems) {
         $format .= "%36s ";
         push @header, qw{ UUID };
     }
+    if ($opt_show_otime) {
+        $format .= "%20s ";
+        push @header, qw{ OTIME };
+    }
     $format .= "%8s ";
     push @header, qw{ TYPE };
 
@@ -763,9 +770,10 @@ foreach my $fuuid (sort keys %filesystems) {
         $line->{depth} ||= 0;
         my @fields = " " x ($line->{depth} * 3) . $line->{path};
         push @fields, ($line->{id} =~ /^\d+$/ ? $line->{id} : '-') if $opt_show_id;
-        push @fields, $line->{gen}  || '-' if $opt_show_gen;
-        push @fields, $line->{cgen} || '-' if $opt_show_cgen;
-        push @fields, $line->{uuid} || '-' if $opt_show_uuid;
+        push @fields, $line->{gen}   || '-' if $opt_show_gen;
+        push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
+        push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
+        push @fields, $line->{otime} || '-' if $opt_show_otime;
         push @fields, $type;
         push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
         push @fields, pretty_print($line->{excl}, 1), $extra;
