@@ -1,5 +1,5 @@
 #! /usr/bin/perl
-# vim: et:ts=4:sw=4:
+# vim: et:ts=4:sw=4:sts=4:
 #
 # SPDX-License-Identifier: GPL-2.0-only
 #
@@ -25,6 +25,7 @@ use Data::Dumper;
 use Term::ANSIColor;
 
 $Data::Dumper::Sortkeys = 1;
+$Data::Dumper::Terse    = 1;
 use constant KiB => 1024**1;
 use constant MiB => 1024**2;
 use constant GiB => 1024**3;
@@ -96,6 +97,7 @@ GetOptions(
 sub debug {
     return if !$opt_debug;
     print STDERR $_ . "\n" for @_;
+    return;
 }
 
 sub run_cmd {
@@ -160,12 +162,16 @@ sub link2real {
 # item5: color-code after the multiplier
 sub pretty_print {
     my ($raw, $mode) = @_;
+
+=cut
     debug("pretty_print(@_);");
     my @c = caller(0);
     debug(Dumper(\@c));
+=cut
+
     if ($opt_raw) {
         return ('', $raw, '', '', '') if (!$mode || $raw ne 0);
-        return ('', '-', '', '', '');
+        return ('', '-',  '', '', '');
     }
     elsif ($mode && ($raw eq '-' || $raw == 0)) {
         return ('', '-', '', '', '') if $mode == 1;
@@ -299,7 +305,7 @@ foreach (@{$cmd->{stdout}}) {
         push @{$filesystems{$fuuid}{'devices'}}, $dev;
     }
 }
-debug(Dumper \%filesystems);
+debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
 
 # now look for the mountpoints
 
@@ -341,7 +347,7 @@ foreach my $fuuid (keys %filesystems) {
     }
 }
 
-debug(Dumper \%filesystems);
+debug("FILESYSTEMS HASH DUMP 2:", Dumper \%filesystems);
 
 # now, for each filesystem we found, let's dig:
 
@@ -386,9 +392,9 @@ foreach my $fuuid (keys %filesystems) {
         gen    => 0,
         cgen   => 0,
         parent => '-',
-        top    => '-',
-        puuid  => '*',
-        ruuid  => '-',
+        top    => '-',                           # top_depth
+        puuid  => '*',                           # parent_uuid
+        ruuid  => '-',                           # received_uuid
         type   => 'fs',
         mode   => 'rw',
         rfer   => '-',
@@ -428,7 +434,7 @@ foreach my $fuuid (keys %filesystems) {
             }
             elsif ($profile eq 'raid5' || $profile eq 'raid6') {
                 my $parity = ($profile eq 'raid5' ? 1 : 2);
-                my $nb = grep { $_ > $sliceSize } values %devFree;
+                my $nb     = grep { $_ > $sliceSize } values %devFree;
                 last if $nb < $parity + 1;
                 foreach my $dev (keys %devFree) {
                     $devFree{$dev} -= $sliceSize if $devFree{$dev} > $sliceSize;
@@ -503,6 +509,7 @@ foreach my $fuuid (keys %filesystems) {
         $vol{$fuuid}{$vuuid}{excl} = 0;
         $vol{$fuuid}{$vuuid}{mp}   = $filesystems{$fuuid}{volmp}{$vol{$fuuid}{$vuuid}{id}};
     }
+
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqs }, $mp]);
     foreach (@{$cmd->{stdout}}) {
         my $found = undef;
@@ -517,12 +524,13 @@ foreach my $fuuid (keys %filesystems) {
             }
         }
     }
+
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -pacguqr }, $mp]);
     foreach (@{$cmd->{stdout}}) {
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
     }
-    debug(Dumper \$vol{$fuuid});
+    debug("VOL{FUUID=$fuuid} DUMP:", Dumper \$vol{$fuuid});
 }
 
 # get quota stuff
@@ -604,7 +612,7 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
 }
-debug(Dumper \%vol);
+debug("VOL HASH DUMP:", Dumper \%vol);
 
 # ok, now, do the magic
 
@@ -613,22 +621,26 @@ my $maxdepth    = 0;
 my $biggestpath = 0;
 my %seen;
 
-sub dothemagic {
-    my $volumes    = shift;
-    my $depth      = shift;
-    my $parentuuid = shift;
+sub order_recursive {
+    my %params     = @_;
+    my $volumes    = $params{'volumes'};
+    my $depth      = $params{'depth'};
+    my $parentuuid = $params{'parentuuid'};
+
     $depth > $maxdepth and $maxdepth = $depth;
+
     foreach my $vuuid (sort { $volumes->{$a}{id} <=> $volumes->{$b}{id} } keys %$volumes) {
-        debug(".." x ($depth) . " working on vuuid=$vuuid with parentuuid=$parentuuid and this uuidpuuid=" . $volumes->{$vuuid}{puuid});
+        debug(".." x ($depth) . " called with volume_uuid=$vuuid and parent_uuid=$parentuuid now working on vol w/ parent_uuid=" . $volumes->{$vuuid}{puuid});
         if ($parentuuid eq $volumes->{$vuuid}{puuid}) {
             my $hash = $volumes->{$vuuid};
             $hash->{depth} = $depth;
             length($hash->{path}) > $biggestpath and $biggestpath = length($hash->{path});
             push @ordered, $hash;
             $seen{$vuuid} = 1;
-            dothemagic($volumes, $depth + 1, $vuuid);    # unless $parentuuid eq '-';
+            order_recursive(volumes => $volumes, depth => $depth + 1, parentuuid => $vuuid);    # unless $parentuuid eq '-';
         }
     }
+    return;
 }
 
 my $isFirstFS = 1;
@@ -636,9 +648,9 @@ foreach my $fuuid (sort keys %filesystems) {
     @ordered     = ();
     $maxdepth    = 0;
     $biggestpath = 0;
-    dothemagic($vol{$fuuid}, 0, '*');
-    dothemagic($vol{$fuuid}, 1, '+');
-    dothemagic($vol{$fuuid}, 1, '-');
+    order_recursive(volumes => $vol{$fuuid}, depth => 0, parentuuid => '*');
+    order_recursive(volumes => $vol{$fuuid}, depth => 1, parentuuid => '+');
+    order_recursive(volumes => $vol{$fuuid}, depth => 1, parentuuid => '-');
 
     foreach my $vuuid (keys %{$vol{$fuuid}}) {
         next if $seen{$vuuid};
