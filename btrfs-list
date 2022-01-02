@@ -97,7 +97,7 @@ GetOptions(
     'p|profile=s'                   => \my $opt_profile,
     'r|raw'                         => \my $opt_raw,
     'btrfs-binary=s'                => \my $opt_btrfs_binary,
-);
+) or die "FATAL: Error parsing arguments, aborting\n";
 
 sub debug {
     return if !$opt_debug;
