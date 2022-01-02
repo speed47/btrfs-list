@@ -71,6 +71,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
       --show-id              show id of each item
+      --show-toplevel        show top level of each item
       --show-uuid            show uuid of each item
       --show-puuid           show parent uuid of each item
       --show-otime           show snap creation time
@@ -92,6 +93,7 @@ GetOptions(
     'show-gen'                      => \my $opt_show_gen,
     'show-cgen'                     => \my $opt_show_cgen,
     'show-id'                       => \my $opt_show_id,
+    'show-toplevel'                 => \my $opt_show_toplevel,
     'show-uuid'                     => \my $opt_show_uuid,
     'show-puuid'                    => \my $opt_show_puuid,
     'show-otime'                    => \my $opt_show_otime,
@@ -252,12 +254,13 @@ if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 ra
 }
 
 if ($opt_show_all) {
-    $opt_show_gen   = 1;
-    $opt_show_cgen  = 1;
-    $opt_show_id    = 1;
-    $opt_show_uuid  = 1;
-    $opt_show_puuid = 1;
-    $opt_show_otime = 1;
+    $opt_show_gen      = 1;
+    $opt_show_cgen     = 1;
+    $opt_show_id       = 1;
+    $opt_show_toplevel = 1;
+    $opt_show_uuid     = 1;
+    $opt_show_puuid    = 1;
+    $opt_show_otime    = 1;
 }
 
 if ($opt_btrfs_binary && !-f -x $opt_btrfs_binary) {
@@ -778,6 +781,10 @@ foreach my $fuuid (sort keys %filesystems) {
         $format .= "%5s ";
         push @header, qw{ ID };
     }
+    if ($opt_show_toplevel) {
+        $format .= "%6s ";
+        push @header, qw{ TOPLVL };
+    }
     if ($opt_show_gen) {
         $format .= "%8s ";
         push @header, qw{ GEN };
@@ -847,6 +854,7 @@ foreach my $fuuid (sort keys %filesystems) {
         #$line->{id} =~ /^\d+$/ or $line->{id} = '-';
         my @fields = " " x ($line->{depth} * 3) . $line->{path};
         push @fields, $line->{id}    || '-' if $opt_show_id;
+        push @fields, $line->{top}   || '-' if $opt_show_toplevel;
         push @fields, $line->{gen}   || '-' if $opt_show_gen;
         push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
         push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
