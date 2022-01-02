@@ -284,7 +284,7 @@ foreach (@{$cmd->{stdout}}) {
         $label = $1;
         $fuuid = $2;
 
-        # some versions of btrfs-progs enquote the label
+        # btrfs-progs v3.14+ enquote the label
         if ($label =~ /^'(.+)'$/) {
             $label = $1;
         }
@@ -541,12 +541,23 @@ foreach my $fuuid (keys %filesystems) {
 
 # get quota stuff
 
+# v3.18 (no --raw)
+
 =cut
 WARNING: Qgroup data inconsistent, rescan recommended
 qgroupid         rfer         excl     max_rfer     max_excl parent  child
 --------         ----         ----     --------     -------- ------  -----
 0/5           7.99MiB      7.99MiB        0.00B        0.00B ---     ---
 0/257        10.02MiB     10.01MiB        0.00B        0.00B ---     ---
+=cut
+
+# v3.19+ has --raw, and additionally, since v4.1, we get 'none' instead of 0:
+
+=cut
+qgroupid         rfer         excl     max_rfer     max_excl parent  child
+--------         ----         ----     --------     -------- ------  -----
+0/5           9848498      8015121         none         none ---     ---
+0/257        10213513     10131212         none         none ---     ---
 =cut
 
 foreach my $fuuid (keys %filesystems) {
@@ -562,28 +573,30 @@ foreach my $fuuid (keys %filesystems) {
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre --raw }, $mp]);
     if ($cmd->{status} || !@{$cmd->{stdout}}) {
+
+        # btrfs-progs v3.18 doesn't support --raw
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{status} || !@{$cmd->{stdout}}) {
             print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
             $vol{$fuuid}{df}{noquota} = 1;
-
-            # let's still fill the info for the main volume
-            $vol{$fuuid}{5} = {
-                id     => 5,
-                path   => "[main]",
-                gen    => 0,
-                cgen   => 0,
-                parent => '-',
-                top    => '-',
-                puuid  => '+',
-                ruuid  => '-',
-                type   => 'mainvol',
-                mode   => 'rw',
-                mp     => $mp,
-            };
-            next;
         }
     }
+
+    # let's still fill the info for the main volume
+    $vol{$fuuid}{5} = {
+        id     => 5,
+        path   => "[main]",
+        gen    => 0,
+        cgen   => 0,
+        parent => '-',
+        top    => '-',
+        puuid  => '+',
+        ruuid  => '-',
+        type   => 'mainvol',
+        mode   => 'rw',
+        mp     => $mp,
+    };
+
     foreach (@{$cmd->{stdout}}) {
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)}) {
             my ($qid, $id, $rfer, $excl) = ($1, $2, human2raw($3), human2raw($4));
