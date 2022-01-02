@@ -728,7 +728,7 @@ sub recursive_add_children_of {
     return;
 }
 
-my $isFirstFS = 1;
+my @orderedAll;
 $opt_deleted ||= 0;
 foreach my $fuuid (sort keys %filesystems) {
     @ordered  = ();
@@ -796,103 +796,103 @@ foreach my $fuuid (sort keys %filesystems) {
         push @ordered, $vuuid;
     }
 
-    # find the longest path (including leading spaces)
-    my $longestpath = 0;
-    foreach (@ordered) {
-        my $len = ($_->{depth} || 0) * 3;
-        $len += length($_->{path});
-        $len > $longestpath and $longestpath = $len;
-    }
-    my $pretty_print_size = ($opt_raw ? 16 : 7);
+    push @orderedAll, @ordered;
+}
 
-    my $format = "%-${longestpath}s ";
-    my @header = qw{ NAME };
-    if ($opt_show_id) {
-        $format .= "%5s ";
-        push @header, qw{ ID };
-    }
-    if ($opt_show_toplevel) {
-        $format .= "%6s ";
-        push @header, qw{ TOPLVL };
-    }
-    if ($opt_show_gen) {
-        $format .= "%8s ";
-        push @header, qw{ GEN };
-    }
-    if ($opt_show_cgen) {
-        $format .= "%8s ";
-        push @header, qw{ CGEN };
-    }
-    if ($opt_show_uuid) {
-        $format .= "%36s ";
-        push @header, qw{ UUID };
-    }
-    if ($opt_show_puuid) {
-        $format .= "%36s ";
-        push @header, qw{ PARENT_UUID };
-    }
-    if ($opt_show_otime) {
-        $format .= "%20s ";
-        push @header, qw{ OTIME };
-    }
+# find the longest path (including leading spaces)
+my $longestpath = 0;
+foreach (@orderedAll) {
+    my $len = ($_->{depth} || 0) * 3;
+    $len += length($_->{path});
+    $len > $longestpath and $longestpath = $len;
+}
+my $pretty_print_size = ($opt_raw ? 16 : 7);
+
+my $format = "%-${longestpath}s ";
+my @header = qw{ NAME };
+if ($opt_show_id) {
+    $format .= "%5s ";
+    push @header, qw{ ID };
+}
+if ($opt_show_toplevel) {
+    $format .= "%6s ";
+    push @header, qw{ TOPLVL };
+}
+if ($opt_show_gen) {
     $format .= "%8s ";
-    push @header, qw{ TYPE };
+    push @header, qw{ GEN };
+}
+if ($opt_show_cgen) {
+    $format .= "%8s ";
+    push @header, qw{ CGEN };
+}
+if ($opt_show_uuid) {
+    $format .= "%36s ";
+    push @header, qw{ UUID };
+}
+if ($opt_show_puuid) {
+    $format .= "%36s ";
+    push @header, qw{ PARENT_UUID };
+}
+if ($opt_show_otime) {
+    $format .= "%20s ";
+    push @header, qw{ OTIME };
+}
+$format .= "%8s ";
+push @header, qw{ TYPE };
 
-    my $noquota = $vol{$fuuid}{df}{noquota} || $opt_free_space;
-    if (!$noquota) {
-        $format .= "%s%${pretty_print_size}s%s%1s%s ";
-        push @header, '', 'REFE', 'R', '', '';
-        push @header, '', 'EXCL', '', '', '', 'MOUNTPOINT';
+my $noquota = $vol{$fuuid}{df}{noquota} || $opt_free_space;
+if (!$noquota) {
+    $format .= "%s%${pretty_print_size}s%s%1s%s ";
+    push @header, '', 'REFE', 'R', '', '';
+    push @header, '', 'EXCL', '', '', '', 'MOUNTPOINT';
+}
+else {
+    push @header, '', 'EXC', 'L', '', '', 'MOUNTPOINT';
+}
+
+$format .= "%s%${pretty_print_size}s%s%1s%s %s\n";
+
+printf $format, @header if !$opt_no_header;
+
+foreach my $line (@orderedAll) {
+    next if ($opt_hide_snapshots and $line->{type} eq 'snap');
+    next if ($opt_only_snapshots and $line->{type} ne 'snap');
+    $line->{rfer} ||= 0;
+    $line->{excl} ||= 0;
+    my $type = $line->{type};
+    if ($opt_snap_min_used) {
+        next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} < $opt_snap_min_used);
     }
-    else {
-        push @header, '', 'EXC', 'L', '', '', 'MOUNTPOINT';
+    if ($opt_snap_max_used) {
+        next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} > $opt_snap_max_used);
     }
-
-    $format .= "%s%${pretty_print_size}s%s%1s%s %s\n";
-
-    print "\n" if (!$isFirstFS);
-    $isFirstFS = 0;
-    printf $format, @header if !$opt_no_header;
-
-    foreach my $line (@ordered) {
-        next if ($opt_hide_snapshots and $line->{type} eq 'snap');
-        next if ($opt_only_snapshots and $line->{type} ne 'snap');
-        $line->{rfer} ||= 0;
-        $line->{excl} ||= 0;
-        my $type = $line->{type};
-        if ($opt_snap_min_used) {
-            next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} < $opt_snap_min_used);
+    $line->{mode} && $line->{mode} eq 'ro' and $type = "ro" . $type;
+    my $extra = '';
+    if (exists $line->{free}) {
+        $extra = '(' . $line->{profile} . ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{free}, 2)) . ' free';
+        if (exists $line->{unallocatable} && $line->{unallocatable} > MiB) {
+            $extra .= ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{unallocatable})) . ' unallocatable';
         }
-        if ($opt_snap_max_used) {
-            next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} > $opt_snap_max_used);
-        }
-        $line->{mode} && $line->{mode} eq 'ro' and $type = "ro" . $type;
-        my $extra = '';
-        if (exists $line->{free}) {
-            $extra = '(' . $line->{profile} . ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{free}, 2)) . ' free';
-            if (exists $line->{unallocatable} && $line->{unallocatable} > MiB) {
-                $extra .= ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{unallocatable})) . ' unallocatable';
-            }
-            $extra .= ')';
-        }
-        elsif (defined $line->{mp}) {
-            $extra = $line->{mp};
-        }
-        $line->{depth} ||= 0;
-        $line->{id}    ||= 0;
-
-        #$line->{id} =~ /^\d+$/ or $line->{id} = '-';
-        my @fields = " " x ($line->{depth} * 3) . $line->{path};
-        push @fields, $line->{id}    || '-' if $opt_show_id;
-        push @fields, $line->{top}   || '-' if $opt_show_toplevel;
-        push @fields, $line->{gen}   || '-' if $opt_show_gen;
-        push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
-        push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
-        push @fields, $line->{puuid} || '-' if $opt_show_puuid;
-        push @fields, $line->{otime} || '-' if $opt_show_otime;
-        push @fields, $type;
-        push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
-        push @fields, pretty_print($line->{excl}, 1), $extra;
-        printf $format, @fields;
+        $extra .= ')';
     }
+    elsif (defined $line->{mp}) {
+        $extra = $line->{mp};
+    }
+    $line->{depth} ||= 0;
+    $line->{id}    ||= 0;
+
+    #$line->{id} =~ /^\d+$/ or $line->{id} = '-';
+    my @fields = " " x ($line->{depth} * 3) . $line->{path};
+    push @fields, $line->{id}    || '-' if $opt_show_id;
+    push @fields, $line->{top}   || '-' if $opt_show_toplevel;
+    push @fields, $line->{gen}   || '-' if $opt_show_gen;
+    push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
+    push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
+    push @fields, $line->{puuid} || '-' if $opt_show_puuid;
+    push @fields, $line->{otime} || '-' if $opt_show_otime;
+    push @fields, $type;
+    push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
+    push @fields, pretty_print($line->{excl}, 1), $extra;
+    printf $format, @fields;
 }
