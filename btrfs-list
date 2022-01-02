@@ -32,6 +32,10 @@ use constant GiB => 1024**3;
 use constant TiB => 1024**4;
 use constant PiB => 1024**5;
 
+use constant PARENT_UUID_DF           => '*';
+use constant PARENT_UUID_NONE_MAINVOL => '+';
+use constant PARENT_UUID_NONE         => '-';
+
 sub help {
     print <<EOF;
 Usage: $0 [options] [mountpoint]
@@ -401,6 +405,8 @@ foreach my $fuuid (keys %filesystems) {
             $devFree{$1} = human2raw($2) + 0;
         }
     }
+
+    # this is the first line of the output, to ensure it, set id == -1
     $vol{$fuuid}{df} = {
         id     => '-1',
         path   => $filesystems{$fuuid}{label},
@@ -408,7 +414,7 @@ foreach my $fuuid (keys %filesystems) {
         cgen   => 0,
         parent => '-',
         top    => '-',                           # top_level
-        puuid  => '*',                           # parent_uuid
+        puuid  => PARENT_UUID_DF,                # parent_uuid
         ruuid  => '-',                           # received_uuid
         type   => 'fs',
         mode   => 'rw',
@@ -508,7 +514,7 @@ foreach my $fuuid (keys %filesystems) {
         }
 
         # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc47c09-fe59-4b4c-8ed6-b01a941bfd75 path sub1
-        $vol{$fuuid}{$vuuid}{puuid} = '-';    # old btrfsprogs don't have puuid, set a sane default
+        $vol{$fuuid}{$vuuid}{puuid} = PARENT_UUID_NONE;    # old btrfsprogs don't have puuid, set a sane default
         /(\s|^)ID (\d+)/            and $vol{$fuuid}{$vuuid}{id}     = $2;
         /(\s|^)gen (\d+)/           and $vol{$fuuid}{$vuuid}{gen}    = $2;
         /(\s|^)cgen (\d+)/          and $vol{$fuuid}{$vuuid}{cgen}   = $2;
@@ -605,7 +611,7 @@ foreach my $fuuid (keys %filesystems) {
         cgen   => 0,
         parent => '-',
         top    => '-',
-        puuid  => '+',
+        puuid  => PARENT_UUID_NONE_MAINVOL,
         ruuid  => '-',
         type   => 'mainvol',
         mode   => 'rw',
@@ -625,7 +631,7 @@ foreach my $fuuid (keys %filesystems) {
                         cgen   => 0,
                         parent => '-',
                         top    => '-',
-                        puuid  => '+',
+                        puuid  => PARENT_UUID_NONE_MAINVOL,
                         ruuid  => '-',
                         type   => 'mainvol',
                         mode   => 'rw',
@@ -646,16 +652,15 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
 }
-debug("VOL HASH DUMP:", Dumper \%vol);
+debug("VOL HASH DUMP (filesystem uuid - volume uuid - data):", Dumper \%vol);
 
 # ok, now, do the magic
 
-my @ordered     = ();
-my $maxdepth    = 0;
-my $biggestpath = 0;
+my @ordered  = ();
+my $maxdepth = 0;
 my %seen;
 
-sub order_recursive {
+sub recursive_add_children_of {
     my %params     = @_;
     my $volumes    = $params{'volumes'};
     my $depth      = $params{'depth'};
@@ -664,14 +669,22 @@ sub order_recursive {
     $depth > $maxdepth and $maxdepth = $depth;
 
     foreach my $vuuid (sort { $volumes->{$a}{id} <=> $volumes->{$b}{id} } keys %$volumes) {
-        debug(".." x ($depth) . " called with volume_uuid=$vuuid and parent_uuid=$parentuuid now working on vol w/ parent_uuid=" . $volumes->{$vuuid}{puuid});
-        if ($parentuuid eq $volumes->{$vuuid}{puuid}) {
-            my $hash = $volumes->{$vuuid};
-            $hash->{depth} = $depth;
-            length($hash->{path}) > $biggestpath and $biggestpath = length($hash->{path});
-            push @ordered, $hash;
+        next if $seen{$vuuid};    # not needed, but just in case
+        my $vol = $volumes->{$vuuid};
+        debug(  "..." x ($depth)
+              . "parent_uuid=$parentuuid, currently working on id "
+              . $vol->{id}
+              . " volume_uuid=$vuuid having parent_uuid="
+              . $vol->{puuid}
+              . " and path-type "
+              . $vol->{path} . "-"
+              . $vol->{type});
+        if ($parentuuid eq $vol->{puuid}) {
+            $vol->{depth} = $depth;
+            push @ordered, $vol;
+            debug("..." x ($depth) . "^^^");
             $seen{$vuuid} = 1;
-            order_recursive(volumes => $volumes, depth => $depth + 1, parentuuid => $vuuid);    # unless $parentuuid eq '-';
+            recursive_add_children_of(volumes => $volumes, depth => $depth + 1, parentuuid => $vuuid);    # unless $parentuuid eq '-';
         }
     }
     return;
@@ -679,19 +692,56 @@ sub order_recursive {
 
 my $isFirstFS = 1;
 foreach my $fuuid (sort keys %filesystems) {
-    @ordered     = ();
-    $maxdepth    = 0;
-    $biggestpath = 0;
-    order_recursive(volumes => $vol{$fuuid}, depth => 0, parentuuid => '*');
-    order_recursive(volumes => $vol{$fuuid}, depth => 1, parentuuid => '+');
-    order_recursive(volumes => $vol{$fuuid}, depth => 1, parentuuid => '-');
+    @ordered  = ();
+    %seen     = ();
+    $maxdepth = 0;
+    my @orphans = ();
+
+    # first, we want the so-called "df" line, which conveniently has a fake specific parent_uuid
+    debug(">>> order df");
+    recursive_add_children_of(volumes => $vol{$fuuid}, depth => 0, parentuuid => PARENT_UUID_DF);
+
+    # then, the builtin main volume (id=5) and all its descendants
+    debug(">>> order mainvol");
+    recursive_add_children_of(volumes => $vol{$fuuid}, depth => 1, parentuuid => PARENT_UUID_NONE_MAINVOL);
+
+    # then, all the other top-level volumes (i.e. that have no parent uuid)
+    debug(">>> order top level vols");
+    recursive_add_children_of(volumes => $vol{$fuuid}, depth => 1, parentuuid => PARENT_UUID_NONE);
+
+    next if !@ordered;
+
+    # then, we might still have unseen volumes, which are orphans (they have a parent_uuid)
+    # but the parent_uuid no longer exists). get all those in a hash
 
     foreach my $vuuid (keys %{$vol{$fuuid}}) {
         next if $seen{$vuuid};
-        push @ordered, $vol{$fuuid}{$vuuid};
+        push @orphans, $vuuid;
     }
 
-    next if !@ordered;
+    # those orphans might however have parents/children between themselves,
+    # so find the first one that has no known parent among the other orphans
+    foreach my $orphan (sort @orphans) {
+        my $no_known_parent = 1;
+        foreach my $potential_parent (@orphans) {
+            next if $orphan eq $potential_parent;    # skip myself
+            $no_known_parent = 0 if ($potential_parent eq $vol{$fuuid}{$orphan}{puuid});
+        }
+        debug(">>> orphan loop on $orphan, no known parent: $no_known_parent");
+        if ($no_known_parent == 1) {
+            push @ordered, $vol{$fuuid}{$orphan};
+            $seen{$orphan} = 1;
+            $vol{$fuuid}{$orphan}{depth} = 1;
+            recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2, parentuuid => $orphan);
+        }
+    }
+
+    # do we still have unseen volumes? (we shouldn't)
+    foreach my $vuuid (keys %{$vol{$fuuid}}) {
+        next if $seen{$vuuid};
+        print STDERR "WARN: we shouldn't have orphaned volumne $vuuid\n";
+        push @ordered, $vuuid;
+    }
 
     # find the longest path (including leading spaces)
     my $longestpath = 0;
