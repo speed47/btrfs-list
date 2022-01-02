@@ -759,11 +759,11 @@ foreach my $fuuid (sort keys %filesystems) {
         push @header, qw{ ID };
     }
     if ($opt_show_gen) {
-        $format .= "%7s ";
+        $format .= "%8s ";
         push @header, qw{ GEN };
     }
     if ($opt_show_cgen) {
-        $format .= "%7s ";
+        $format .= "%8s ";
         push @header, qw{ CGEN };
     }
     if ($opt_show_uuid) {
