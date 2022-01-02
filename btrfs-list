@@ -392,7 +392,7 @@ foreach my $fuuid (keys %filesystems) {
         gen    => 0,
         cgen   => 0,
         parent => '-',
-        top    => '-',                           # top_depth
+        top    => '-',                           # top_level
         puuid  => '*',                           # parent_uuid
         ruuid  => '-',                           # received_uuid
         type   => 'fs',
@@ -492,13 +492,13 @@ foreach my $fuuid (keys %filesystems) {
             next;
         }
 
-        # ID 257 gen 17 cgen 11 parent 5 top depth 5 parent_uuid - received_uuid - uuid 9bc47c09-fe59-4b4c-8ed6-b01a941bfd75 path sub1
+        # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc47c09-fe59-4b4c-8ed6-b01a941bfd75 path sub1
         $vol{$fuuid}{$vuuid}{puuid} = '-';    # old btrfsprogs don't have puuid, set a sane default
         /(\s|^)ID (\d+)/            and $vol{$fuuid}{$vuuid}{id}     = $2;
         /(\s|^)gen (\d+)/           and $vol{$fuuid}{$vuuid}{gen}    = $2;
         /(\s|^)cgen (\d+)/          and $vol{$fuuid}{$vuuid}{cgen}   = $2;
         /(\s|^)parent (\d+)/        and $vol{$fuuid}{$vuuid}{parent} = $2;
-        /(\s|^)top_depth (\d+)/     and $vol{$fuuid}{$vuuid}{top}    = $2;
+        /(\s|^)top level (\d+)/     and $vol{$fuuid}{$vuuid}{top}    = $2;
         /(\s|^)parent_uuid (\S+)/   and $vol{$fuuid}{$vuuid}{puuid}  = $2;
         /(\s|^)received_uuid (\S+)/ and $vol{$fuuid}{$vuuid}{ruuid}  = $2;
         /(\s|^)path (\S+)/          and $vol{$fuuid}{$vuuid}{path}   = $2;
