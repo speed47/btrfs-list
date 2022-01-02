@@ -47,6 +47,8 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --bright               use bright colors (better for dark terminals)
   -H, --no-header            hide header from output
   -r, --raw                  show raw numbers instead of human-readable
+      --btrfs-binary BIN     path to the btrfs binary to use instead of using the
+                               first binary found in the PATH
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
@@ -92,6 +94,7 @@ GetOptions(
     'h|help|usage'                  => \my $opt_help,
     'p|profile=s'                   => \my $opt_profile,
     'r|raw'                         => \my $opt_raw,
+    'btrfs-binary=s'                => \my $opt_btrfs_binary,
 );
 
 sub debug {
@@ -105,6 +108,10 @@ sub run_cmd {
     my $cmd           = $params{'cmd'};
     my $silent_stderr = $params{'silent_stderr'};
     my $fatal         = $params{'fatal'};
+
+    if ($cmd->[0] eq 'btrfs' && $opt_btrfs_binary) {
+        $cmd->[0] = $opt_btrfs_binary;
+    }
 
     my ($_stdin, $_stdout, $_stderr);
     $_stderr = gensym;
@@ -239,6 +246,11 @@ if ($opt_show_all) {
     $opt_show_cgen = 1;
     $opt_show_id   = 1;
     $opt_show_uuid = 1;
+}
+
+if ($opt_btrfs_binary && !-f -x $opt_btrfs_binary) {
+    print STDERR "FATAL: Specified btrfs binary '$opt_btrfs_binary' doesn't exist or is not executable\n";
+    exit 1;
 }
 
 help() if $opt_help;
