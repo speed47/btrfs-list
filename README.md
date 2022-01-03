@@ -26,15 +26,22 @@ Usage: btrfs-list [options] [mountpoint]
 If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
-  -d, --debug                enable debug output
+      --debug                enable debug output
   -q, --quiet                silence the quota disabled & quota rescan warnings
-      --color=WHEN           colorize the output; WHEN can be 'never', 'always',
-                               or 'auto' (default, colorize if STDOUT is a term)
+      --version              display version info
+      --color=WHEN           colorize the output; WHEN can be 'never',
+                               'always', or 'auto' (default is:
+                               colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
+      --bright               use bright colors (better for dark terminals)
   -H, --no-header            hide header from output
+  -r, --raw                  show raw numbers instead of human-readable
+      --btrfs-binary BIN     path to the btrfs binary to use instead of using
+                               the first binary found in the PATH
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
+  -d, --deleted              show deleted parents of orphaned snapshots
       --snap-min-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up less space than SIZE
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
@@ -43,13 +50,23 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
                                'raid1', 'raid10', 'raid5' or 'raid6', for
-                               realfree space calculation (default: autodetect)
+                               free space calculation (default: autodetect)
 
-      --show-all             show all information for each item
+  -a, --show-all             show all information for each item
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
       --show-id              show id of each item
+      --show-parent          show parent id of each item
+      --show-toplevel        show top level of each item
       --show-uuid            show uuid of each item
+      --show-puuid           show parent uuid of each item
+      --show-ruuid           show received uuid of each item
+      --show-otime           show snap creation time
+
+  -w, --wide                 don't truncate uuids on output (this is the
+                               default if STDOUT is NOT a term)
+      --no-wide              always truncate uuids on output (useful to
+                               override above default)
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 ```

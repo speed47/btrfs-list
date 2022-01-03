@@ -289,7 +289,7 @@ if (defined $opt_snap_max_used) {
 if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {    ## no critic
     $ENV{'ANSI_COLORS_DISABLED'} = 1;
 }
-if (!$opt_wide && !-t 1) {
+if (!$opt_wide && !-t 1) {                                         ## no critic
 
     # wide if STDOUT is NOT a term
     $opt_wide = 1;
