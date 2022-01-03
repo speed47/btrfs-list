@@ -72,6 +72,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --show-gen             show generation of each item
       --show-cgen            show generation at creation of each item
       --show-id              show id of each item
+      --show-parent          show parent id of each item
       --show-toplevel        show top level of each item
       --show-uuid            show uuid of each item
       --show-puuid           show parent uuid of each item
@@ -100,6 +101,7 @@ GetOptions(
     'show-gen'                      => \my $opt_show_gen,
     'show-cgen'                     => \my $opt_show_cgen,
     'show-id'                       => \my $opt_show_id,
+    'show-parent'                   => \my $opt_show_parent,
     'show-toplevel'                 => \my $opt_show_toplevel,
     'show-uuid'                     => \my $opt_show_uuid,
     'show-puuid'                    => \my $opt_show_puuid,
@@ -277,6 +279,7 @@ if ($opt_show_all) {
     $opt_show_gen      = 1;
     $opt_show_cgen     = 1;
     $opt_show_id       = 1;
+    $opt_show_parent   = 1;
     $opt_show_toplevel = 1;
     $opt_show_uuid     = 1;
     $opt_show_puuid    = 1;
@@ -835,6 +838,10 @@ if ($opt_show_id) {
     $format .= "%6s ";
     push @header, qw{ ID };
 }
+if ($opt_show_parent) {
+    $format .= "%6s ";
+    push @header, qw{ PARENT };
+}
 if ($opt_show_toplevel) {
     $format .= "%6s ";
     push @header, qw{ TOPLVL };
@@ -924,14 +931,15 @@ foreach my $line (@orderedAll) {
     $line->{puuid} = '-' if ($line->{'puuid'} && length($line->{puuid}) == 1);
 
     my @fields = " " x ($line->{depth} * 3) . $line->{path};
-    push @fields, $line->{id}    || '-' if $opt_show_id;
-    push @fields, $line->{top}   || '-' if $opt_show_toplevel;
-    push @fields, $line->{gen}   || '-' if $opt_show_gen;
-    push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
-    push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
-    push @fields, $line->{puuid} || '-' if $opt_show_puuid;
-    push @fields, $line->{ruuid} || '-' if $opt_show_ruuid;
-    push @fields, $line->{otime} || '-' if $opt_show_otime;
+    push @fields, $line->{id}     || '-' if $opt_show_id;
+    push @fields, $line->{parent} || '-' if $opt_show_parent;
+    push @fields, $line->{top}    || '-' if $opt_show_toplevel;
+    push @fields, $line->{gen}    || '-' if $opt_show_gen;
+    push @fields, $line->{cgen}   || '-' if $opt_show_cgen;
+    push @fields, $line->{uuid}   || '-' if $opt_show_uuid;
+    push @fields, $line->{puuid}  || '-' if $opt_show_puuid;
+    push @fields, $line->{ruuid}  || '-' if $opt_show_ruuid;
+    push @fields, $line->{otime}  || '-' if $opt_show_otime;
     push @fields, $type;
     push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
     push @fields, pretty_print($line->{excl}, 1), $extra;
