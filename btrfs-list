@@ -91,7 +91,7 @@ EOF
 }
 
 GetOptions(
-    'd|debug'                       => \my $opt_debug,
+    'debug',                        => \my $opt_debug,
     'q|quiet'                       => \my $opt_quiet,
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
@@ -118,7 +118,7 @@ GetOptions(
     'p|profile=s'                   => \my $opt_profile,
     'r|raw'                         => \my $opt_raw,
     'btrfs-binary=s'                => \my $opt_btrfs_binary,
-    'deleted'                       => \my $opt_deleted,
+    'd|deleted'                     => \my $opt_deleted,
 ) or die "FATAL: Error parsing arguments, aborting\n";
 
 sub debug {
