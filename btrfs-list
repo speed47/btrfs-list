@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: GPL-2.0-only
 #
-# btrfs-list: a wrapper to btrfs-progs to show a nice overview of your btrfs subvolumes and snapshots, a la 'zfs list'
+# btrfs-list: a wrapper to btrfs-progs to show a nice tree-style overview of your btrfs subvolumes and snapshots, a la 'zfs list'
 #
 # Check for the latest version at:
 # https://github.com/speed47/btrfs-list
