@@ -329,7 +329,9 @@ help() if $opt_help;
 
 my $wantedFs = shift;
 if ($wantedFs) {
-    ($wantedFs) = $wantedFs =~ /^(.+)$/;
+
+    # canonicalize
+    $wantedFs = link2real($wantedFs);
 }
 
 # check btrfs-progs version
