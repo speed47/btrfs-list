@@ -366,14 +366,19 @@ while (<$procfd>) {
 close($procfd);
 
 # first ensure passed wantedFs is a mountpoint
+my $originalWantedFs = $wantedFs;
 if ($wantedFs) {
     $wantedFs =~ s{/+}{/}g;
     $wantedFs =~ s{/$}{};
-    my $originalWantedFs = $wantedFs;
     while (1) {
         $wantedFs ||= '/';
-        $cmd = run_cmd(cmd => ['mountpoint', $wantedFs], silent_stderr => 1);
-        if ($cmd->{'status'} != 0) {
+        my $ismp = 0;
+        foreach (@procmounts) {
+            next if ($_->{mp} ne $wantedFs);
+            $ismp = 1;
+            last;
+        }
+        if (!$ismp) {
             next if ($wantedFs =~ s{/[^/]+$}{});
             last;
         }
