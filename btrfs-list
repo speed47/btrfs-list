@@ -18,11 +18,14 @@
 use strict;
 use warnings;
 use version;
+use File::Basename;
 use IPC::Open3;
 use Symbol 'gensym';
 use Getopt::Long qw{ :config gnu_getopt no_ignore_case };
 use Data::Dumper;
 use Term::ANSIColor;
+
+my $VERSION = "2.0";
 
 $Data::Dumper::Sortkeys = 1;
 $Data::Dumper::Terse    = 1;
@@ -48,6 +51,7 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
   -h, --help                 display this message
       --debug                enable debug output
   -q, --quiet                silence the quota disabled & quota rescan warnings
+      --version              display version info
       --color=WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
                                colorize if STDOUT is a term)
@@ -94,7 +98,8 @@ EOF
 }
 
 GetOptions(
-    'debug',                        => \my $opt_debug,
+    'debug'                         => \my $opt_debug,
+    'version'                       => \my $opt_version,
     'q|quiet'                       => \my $opt_quiet,
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
@@ -245,6 +250,29 @@ sub human2raw {
 }
 
 # MAIN
+
+if ($opt_version) {
+
+    # if we were git clone'd, adjust VERSION
+    my $ver = $VERSION;
+    my $dir = dirname($0);
+    if (-d "$dir/.git") {
+        my $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ git -C }, $dir, qw{ describe --tags --dirty }]);
+        if ($cmd->{status} eq 0 && $cmd->{stdout}) {
+            $ver = $cmd->{stdout}[0];
+        }
+    }
+
+    # also get btrfs --version
+    my $btrfsver;
+    my $cmd = run_cmd(cmd => [qw{ btrfs --version }]);
+    if ($cmd->{status} eq 0) {
+        ($btrfsver) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
+    }
+
+    print "btrfs-list v$ver using btrfs v$btrfsver\n";
+    exit 0;
+}
 
 # check opts
 
