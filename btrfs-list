@@ -36,6 +36,9 @@ use constant PARENT_UUID_DF           => '*';
 use constant PARENT_UUID_NONE_MAINVOL => '+';
 use constant PARENT_UUID_NONE         => '-';
 
+use constant FAKE_ID_DF    => -1;
+use constant FAKE_ID_GHOST => -2;
+
 sub help {
     print <<EOF;
 Usage: $0 [options] [mountpoint]
@@ -468,9 +471,8 @@ foreach my $fuuid (keys %filesystems) {
         }
     }
 
-    # this is the first line of the output, to ensure it, set id == -1
     $vol{$fuuid}{df} = {
-        id     => '-1',
+        id     => FAKE_ID_DF,
         path   => $filesystems{$fuuid}{label},
         gen    => 0,
         cgen   => 0,
@@ -777,7 +779,7 @@ foreach my $fuuid (sort keys %filesystems) {
     # then, we might still have unseen volumes, which are orphans (they have a parent_uuid)
     # but the parent_uuid no longer exists). get all those in a hash
 
-    foreach my $vuuid (keys %{$vol{$fuuid}}) {
+  ORPHANS: foreach my $vuuid (keys %{$vol{$fuuid}}) {
         next if $seen{$vuuid};
         push @orphans, $vuuid;
     }
@@ -793,23 +795,43 @@ foreach my $fuuid (sort keys %filesystems) {
         debug(">>> orphan loop on $orphan, no known parent: $no_known_parent");
         if ($no_known_parent == 1) {
             if ($opt_deleted) {
+                my $parent_uuid = $vol{$fuuid}{$orphan}{puuid};
 
                 # craft a ghost parent if asked to
-                push @ordered,
-                  {
+                my $ghost = {
+                    id    => FAKE_ID_GHOST,
                     type  => 'deleted',
                     path  => "(deleted)",
+                    uuid  => $parent_uuid,
                     depth => 1,
-                  };
+                };
+                push @ordered, $ghost;
+                $seen{$parent_uuid} = 1;
+                debug(">>> added ghost parent $parent_uuid");
+
+                # and all the ghost' children, if any
+                debug(">>> adding children of ghost parent $parent_uuid (we should have at least $orphan)");
+                recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2, parentuuid => $parent_uuid);
             }
+            else {
 
-            # add the orphan ourselves
-            push @ordered, $vol{$fuuid}{$orphan};
-            $seen{$orphan} = 1;
-            $vol{$fuuid}{$orphan}{depth} = 1 + $opt_deleted;
+                # add the orphan ourselves
+                push @ordered, $vol{$fuuid}{$orphan};
+                $seen{$orphan} = 1;
+                $vol{$fuuid}{$orphan}{depth} = 1;
 
-            # and all the orphans' children, if any
-            recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2 + $opt_deleted, parentuuid => $orphan);
+                # and all the orphans' children, if any
+                debug(">>> adding children of orphan $orphan");
+                recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2, parentuuid => $orphan);
+            }
+        }
+
+        if ($opt_deleted) {
+
+            # we have added a new ghost parent, so other orphans might no longer
+            # actually be orphans, start again above
+            @orphans = ();
+            goto ORPHANS;
         }
     }
 
