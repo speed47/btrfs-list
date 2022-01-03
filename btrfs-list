@@ -823,36 +823,47 @@ foreach my $fuuid (sort keys %filesystems) {
     push @orderedAll, @ordered;
 }
 
-# find the longest path (including leading spaces)
-my $longestpath = 0;
-foreach (@orderedAll) {
-    my $len = ($_->{depth} || 0) * 3;
-    $len += length($_->{path});
-    $len > $longestpath and $longestpath = $len;
-}
-my $pretty_print_size = ($opt_raw ? 16 : 7);
+# this sub returns the length of the longest item of a column or @sortedAll
+# and pushes the header name to @headers
+my @header;
 
-my $format = "%-${longestpath}s ";
-my @header = qw{ NAME };
+sub longest {
+    my $headerName = shift;
+    my $useDepth   = shift;    # whether 'depth' should be taken into account
+    my $key        = shift;
+
+    # ensure the header name always fits
+    my $longest = ($opt_no_header ? 1 : length($headerName));
+    push @header, $headerName;
+
+    # loop through all the items
+    foreach my $item (@orderedAll) {
+        my $len = ($useDepth ? (($item->{depth} || 0) * 3) : 0);
+        $len += length($item->{$key} || '');
+        $longest = $len if $len > $longest;
+    }
+
+    return $longest;
+}
+
+# find the longest path (including leading spaces)
+# note that longest() also pushes the header to @headers
+my $format = "%-" . longest('NAME', 1, 'path') . "s ";
+
 if ($opt_show_id) {
-    $format .= "%6s ";
-    push @header, qw{ ID };
+    $format .= "%" . longest('ID', 0, 'id') . "s ";
 }
 if ($opt_show_parent) {
-    $format .= "%6s ";
-    push @header, qw{ PARENT };
+    $format .= "%" . longest('PARENT', 0, 'parent') . "s ";
 }
 if ($opt_show_toplevel) {
-    $format .= "%6s ";
-    push @header, qw{ TOPLVL };
+    $format .= "%" . longest('TOPLVL', 0, 'top') . "s ";
 }
 if ($opt_show_gen) {
-    $format .= "%8s ";
-    push @header, qw{ GEN };
+    $format .= "%" . longest('GEN', 0, 'gen') . "s ";
 }
 if ($opt_show_cgen) {
-    $format .= "%8s ";
-    push @header, qw{ CGEN };
+    $format .= "%" . longest('CGEN', 0, 'cgen') . "s ";
 }
 my $uuid_len = ($opt_wide ? 36 : 10);
 if ($opt_show_uuid) {
@@ -871,10 +882,10 @@ if ($opt_show_otime) {
     $format .= "%20s ";
     push @header, qw{ OTIME };
 }
-$format .= "%8s ";
-push @header, qw{ TYPE };
+$format .= "%" . longest('TYPE', 0, 'type') . "s ";
 
-my $noquota = $vol{$fuuid}{df}{noquota} || $opt_free_space;
+my $pretty_print_size = ($opt_raw ? 16 : 7);
+my $noquota           = $vol{$fuuid}{df}{noquota} || $opt_free_space;
 if (!$noquota) {
     $format .= "%s%${pretty_print_size}s%s%1s%s ";
     push @header, '', 'REFE', 'R', '', '';
