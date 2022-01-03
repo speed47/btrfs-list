@@ -43,20 +43,21 @@ Usage: $0 [options] [mountpoint]
 If no [mountpoint] is specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
-  -d, --debug                enable debug output
+      --debug                enable debug output
   -q, --quiet                silence the quota disabled & quota rescan warnings
-      --color=WHEN           colorize the output; WHEN can be 'never', 'always',
-                               or 'auto' (default, colorize if STDOUT is a term)
+      --color=WHEN           colorize the output; WHEN can be 'never',
+                               'always', or 'auto' (default is:
+                               colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
       --bright               use bright colors (better for dark terminals)
   -H, --no-header            hide header from output
   -r, --raw                  show raw numbers instead of human-readable
-      --btrfs-binary BIN     path to the btrfs binary to use instead of using the
-                               first binary found in the PATH
+      --btrfs-binary BIN     path to the btrfs binary to use instead of using
+                               the first binary found in the PATH
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
-      --deleted              show deleted parents of orphaned snapshots
+  -d, --deleted              show deleted parents of orphaned snapshots
       --snap-min-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up less space than SIZE
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
@@ -74,7 +75,13 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
       --show-toplevel        show top level of each item
       --show-uuid            show uuid of each item
       --show-puuid           show parent uuid of each item
+      --show-ruuid           show received uuid of each item
       --show-otime           show snap creation time
+
+  -w, --wide                 don't truncate uuids on output (this is the
+                               default if STDOUT is NOT a term)
+      --no-wide              always truncate uuids on output (useful to
+                               override above default)
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 
@@ -96,7 +103,10 @@ GetOptions(
     'show-toplevel'                 => \my $opt_show_toplevel,
     'show-uuid'                     => \my $opt_show_uuid,
     'show-puuid'                    => \my $opt_show_puuid,
+    'show-ruuid'                    => \my $opt_show_ruuid,
     'show-otime'                    => \my $opt_show_otime,
+    'wide|w'                        => \my $opt_wide,
+    'no-wide'                       => \my $opt_no_wide,
     'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
     'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
     'n|no-color'                    => \my $opt_no_color,
@@ -246,6 +256,16 @@ if (defined $opt_snap_max_used) {
 if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {    ## no critic
     $ENV{'ANSI_COLORS_DISABLED'} = 1;
 }
+if (!$opt_wide && !-t 1) {
+
+    # wide if STDOUT is NOT a term
+    $opt_wide = 1;
+}
+if (defined $opt_no_wide) {
+
+    # --no-wide always wins
+    $opt_wide = 0;
+}
 
 if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 raid1 raid10 raid5 raid6 }) {
     print STDERR "FATAL: invalid argument for --profile\n";
@@ -260,6 +280,7 @@ if ($opt_show_all) {
     $opt_show_toplevel = 1;
     $opt_show_uuid     = 1;
     $opt_show_puuid    = 1;
+    $opt_show_ruuid    = 1;
     $opt_show_otime    = 1;
 }
 
@@ -811,7 +832,7 @@ my $pretty_print_size = ($opt_raw ? 16 : 7);
 my $format = "%-${longestpath}s ";
 my @header = qw{ NAME };
 if ($opt_show_id) {
-    $format .= "%5s ";
+    $format .= "%6s ";
     push @header, qw{ ID };
 }
 if ($opt_show_toplevel) {
@@ -826,13 +847,18 @@ if ($opt_show_cgen) {
     $format .= "%8s ";
     push @header, qw{ CGEN };
 }
+my $uuid_len = ($opt_wide ? 36 : 10);
 if ($opt_show_uuid) {
-    $format .= "%36s ";
+    $format .= "%${uuid_len}s ";
     push @header, qw{ UUID };
 }
 if ($opt_show_puuid) {
-    $format .= "%36s ";
-    push @header, qw{ PARENT_UUID };
+    $format .= "%${uuid_len}s ";
+    push @header, qw{ PARENTUUID };
+}
+if ($opt_show_ruuid) {
+    $format .= "%${uuid_len}s ";
+    push @header, qw{ RCVD_UUID };
 }
 if ($opt_show_otime) {
     $format .= "%20s ";
@@ -882,7 +908,21 @@ foreach my $line (@orderedAll) {
     $line->{depth} ||= 0;
     $line->{id}    ||= 0;
 
-    #$line->{id} =~ /^\d+$/ or $line->{id} = '-';
+    if (!$opt_wide) {
+        foreach my $key (qw{ uuid puuid ruuid }) {
+            next if !$line->{$key};
+            if ($line->{$key} =~ m{^(....).+(....)$}) {
+                $line->{$key} = "$1..$2";
+            }
+        }
+    }
+
+    # replace our internal id==-1 by -
+    $line->{id} =~ /^\d+$/ or $line->{id} = '-';
+
+    # replace our internal '*' and '+' by '-'
+    $line->{puuid} = '-' if ($line->{'puuid'} && length($line->{puuid}) == 1);
+
     my @fields = " " x ($line->{depth} * 3) . $line->{path};
     push @fields, $line->{id}    || '-' if $opt_show_id;
     push @fields, $line->{top}   || '-' if $opt_show_toplevel;
@@ -890,6 +930,7 @@ foreach my $line (@orderedAll) {
     push @fields, $line->{cgen}  || '-' if $opt_show_cgen;
     push @fields, $line->{uuid}  || '-' if $opt_show_uuid;
     push @fields, $line->{puuid} || '-' if $opt_show_puuid;
+    push @fields, $line->{ruuid} || '-' if $opt_show_ruuid;
     push @fields, $line->{otime} || '-' if $opt_show_otime;
     push @fields, $type;
     push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
