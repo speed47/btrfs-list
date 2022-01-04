@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: GPL-2.0-only
 #
-# btrfs-list: a wrapper to btrfs-progs to show a nice tree-style overview of your btrfs subvolumes and snapshots, a la 'zfs list'
+# btrfs-list: a wrapper to btrfs-progs to show a nice tree-style overview
+#             of your btrfs subvolumes and snapshots, a la 'zfs list'
 #
 # Check for the latest version at:
 # https://github.com/speed47/btrfs-list
@@ -11,7 +12,7 @@
 # or wget https://raw.githubusercontent.com/speed47/btrfs-list/master/btrfs-list -O btrfs-list
 # or curl -L https://raw.githubusercontent.com/speed47/btrfs-list/master/btrfs-list -o btrfs-list
 #
-# perltidy -b -pt=2 -sbt=2 -bt=2 -l=180 btrfs-list
+# perltidy -b -csc -iscl -nolc -nbbc -pt=2 -sbt=2 -bt=2 -l=120 -msc=1 btrfs-list
 #
 # Stephane Lesimple
 #
@@ -43,7 +44,7 @@ use constant FAKE_ID_DF    => -1;
 use constant FAKE_ID_GHOST => -2;
 
 sub help {
-    print <<EOF;
+    print <<"EOF";
 Usage: $0 [options] [mountpoint]
 
 If no [mountpoint] is specified, display info for all btrfs filesystems.
@@ -96,7 +97,7 @@ SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 
 EOF
     exit 0;
-}
+} ## end sub help
 
 GetOptions(
     'debug'                         => \my $opt_debug,
@@ -158,7 +159,7 @@ sub run_cmd {
         debug("stdout: " . $_);
         /WARNING:/ and print STDERR $_ . "\n";
         push @stdout, $_;
-    }
+    } ## end while (<$_stdout>)
     while (<$_stderr>) {
         chomp;
         debug("stderr: " . $_);
@@ -167,7 +168,7 @@ sub run_cmd {
             print join(' ', @$cmd) . ": stderr: " . $_ . "\n";
         }
         push @stderr, $_;
-    }
+    } ## end while (<$_stderr>)
     waitpid($pid, 0);
     my $child_exit_status = $? >> 8;
     debug("cmd return status is $child_exit_status");
@@ -176,9 +177,9 @@ sub run_cmd {
         print STDERR "FATAL: stdout: " . $_ . "\n" for @stdout;
         print STDERR "FATAL: stderr: " . $_ . "\n" for @stderr;
         exit 1;
-    }
+    } ## end if ($fatal && $child_exit_status...)
     return {status => $child_exit_status, stdout => \@stdout, stderr => \@stderr};
-}
+} ## end sub run_cmd
 
 sub link2real {
     my $dev = shift;
@@ -192,7 +193,7 @@ sub link2real {
         return $readlinkcache{$dev};
     }
     return $dev;
-}
+} ## end sub link2real
 
 # returns a list with 5 items
 # item1: color-code before the number
@@ -217,9 +218,9 @@ sub pretty_print {
         return ('', '-', '', '', '') if $mode == 1;
         return ('', '0', '', '', '') if $mode == 2;
     }
-#<<< no perltidy
+
     my $bright = ($opt_bright ? 'bright_' : '');
-    CORE::state ($nbcolors, $dark);
+    CORE::state($nbcolors, $dark);
     if (!defined $nbcolors) {
         my $cmd = run_cmd(cmd => [qw{ tput colors }], silent_stderr => 1);
         $nbcolors = $cmd->{stdout}->[0];
@@ -227,17 +228,18 @@ sub pretty_print {
         $nbcolors = 8 if !$nbcolors;
         debug("nbcolors=$nbcolors");
         $dark = ($nbcolors <= 8 ? "${bright}black" : 'grey9');
+
         # terms that don't support colors (except if --color=always)
         $ENV{'ANSI_COLORS_DISABLED'} = 1 if ($nbcolors == -1 && $opt_color ne 'always');
-    }
-    if    ($raw > PiB) { return (color("${bright}magenta"), sprintf('%.2f', $raw / PiB), color($dark), 'P', color('reset')); }
-    elsif ($raw > TiB) { return (color("${bright}red")    , sprintf('%.2f', $raw / TiB), color($dark), 'T', color('reset')); }
-    elsif ($raw > GiB) { return (color("${bright}yellow") , sprintf('%.2f', $raw / GiB), color($dark), 'G', color('reset')); }
-    elsif ($raw > MiB) { return (color("${bright}green")  , sprintf('%.2f', $raw / MiB), color($dark), 'M', color('reset')); }
-    elsif ($raw > KiB) { return (color("${bright}blue")   , sprintf('%.2f', $raw / KiB), color($dark), 'k', color('reset')); }
-    else               { return (''                     , sprintf('%.2f', $raw      ), ''          , ' ', ''            ); }
-#>>>
-}
+    } ## end if (!defined $nbcolors)
+    my $r = color('reset');
+    if    ($raw > PiB) { return (color("${bright}magenta"), sprintf('%.2f', $raw / PiB), color($dark), 'P', $r); }
+    elsif ($raw > TiB) { return (color("${bright}red"),     sprintf('%.2f', $raw / TiB), color($dark), 'T', $r); }
+    elsif ($raw > GiB) { return (color("${bright}yellow"),  sprintf('%.2f', $raw / GiB), color($dark), 'G', $r); }
+    elsif ($raw > MiB) { return (color("${bright}green"),   sprintf('%.2f', $raw / MiB), color($dark), 'M', $r); }
+    elsif ($raw > KiB) { return (color("${bright}blue"),    sprintf('%.2f', $raw / KiB), color($dark), 'k', $r); }
+    else               { return ('',                        sprintf('%.2f', $raw),       '',           ' ', ''); }
+} ## end sub pretty_print
 
 sub pretty_print_str {
     return sprintf("%s%s%s%s%s", pretty_print(@_));
@@ -252,7 +254,7 @@ sub human2raw {
     elsif ($4 eq 'M') { return $1 * MiB; }
     elsif ($4 eq 'k') { return $1 * KiB; }
     return $human;
-}
+} ## end sub human2raw
 
 sub compute_allocatable_for_profile {
     my ($profile, $free, $devBytesRef) = @_;
@@ -273,46 +275,43 @@ sub compute_allocatable_for_profile {
         my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
 
         if ($profile eq 'raid1') {
-            last if ($devBytes{$sk[1]} <= $sliceSize);    # out of space
+            last if ($devBytes{$sk[1]} <= $sliceSize); # out of space
             $unallocFree += $sliceSize;
             $devBytes{$sk[0]} -= $sliceSize;
             $devBytes{$sk[1]} -= $sliceSize;
-        }
+        } ## end if ($profile eq 'raid1')
         elsif ($profile eq 'raid1c3') {
-            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
-            last if ($devBytes{$sk[2]} <= $sliceSize);    # out of space
+            last if ($devBytes{$sk[2]} <= $sliceSize); # out of space
             $unallocFree += $sliceSize;
             $devBytes{$sk[0]} -= $sliceSize;
             $devBytes{$sk[1]} -= $sliceSize;
             $devBytes{$sk[2]} -= $sliceSize;
-        }
+        } ## end elsif ($profile eq 'raid1c3')
         elsif ($profile eq 'raid1c4') {
-            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
-            last if ($devBytes{$sk[3]} <= $sliceSize);    # out of space
+            last if ($devBytes{$sk[3]} <= $sliceSize); # out of space
             $unallocFree += $sliceSize;
             $devBytes{$sk[0]} -= $sliceSize;
             $devBytes{$sk[1]} -= $sliceSize;
             $devBytes{$sk[2]} -= $sliceSize;
             $devBytes{$sk[3]} -= $sliceSize;
-        }
+        } ## end elsif ($profile eq 'raid1c4')
         elsif ($profile eq 'raid10') {
-            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
-            last if ($devBytes{$sk[3]} <= $sliceSize);    # out of space
+            last if ($devBytes{$sk[3]} <= $sliceSize); # out of space
             $unallocFree += $sliceSize * 2;
             $devBytes{$sk[0]} -= $sliceSize;
             $devBytes{$sk[1]} -= $sliceSize;
             $devBytes{$sk[2]} -= $sliceSize;
             $devBytes{$sk[3]} -= $sliceSize;
-        }
+        } ## end elsif ($profile eq 'raid10')
         elsif ($profile eq 'raid5' || $profile eq 'raid6') {
             my $parity = ($profile eq 'raid5' ? 1 : 2);
             my $nb     = grep { $_ > $sliceSize } values %devBytes;
-            last if $nb < $parity + 1;                    # out of spacee
+            last if $nb < $parity + 1;                 # out of space
             foreach my $dev (keys %devBytes) {
                 $devBytes{$dev} -= $sliceSize if $devBytes{$dev} > $sliceSize;
             }
             $unallocFree += ($nb - $parity) * $sliceSize;
-        }
+        } ## end elsif ($profile eq 'raid5'...)
         elsif (grep { $profile eq $_ } qw( raid0 single dup )) {
 
             # those are easy, we just add up every free space of every device
@@ -321,12 +320,12 @@ sub compute_allocatable_for_profile {
             $unallocFree /= 2 if $profile eq 'dup';
             %devBytes = ();
             last;
-        }
+        } ## end elsif (grep { $profile eq...})
         else {
             print "ERROR: Unknown data profile '$profile'!\n";
             exit 1;
         }
-    }
+    } ## end while (1)
     $free += $unallocFree;
 
     # if free is < 1 MiB, then consider it as full to the brim,
@@ -343,7 +342,7 @@ sub compute_allocatable_for_profile {
     }
 
     return {allocatable => $free, unallocatable => $unallocatable};
-}
+} ## end sub compute_allocatable_for_profile
 
 # MAIN
 
@@ -354,21 +353,21 @@ if ($opt_version) {
     my $dir = dirname($0);
     if (-d "$dir/.git") {
         my $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ git -C }, $dir, qw{ describe --tags --dirty }]);
-        if ($cmd->{status} eq 0 && $cmd->{stdout}) {
+        if ($cmd->{status} == 0 && $cmd->{stdout}) {
             $ver = $cmd->{stdout}[0];
         }
-    }
+    } ## end if (-d "$dir/.git")
 
     # also get btrfs --version
     my $btrfsver;
     my $cmd = run_cmd(cmd => [qw{ btrfs --version }]);
-    if ($cmd->{status} eq 0) {
+    if ($cmd->{status} == 0) {
         ($btrfsver) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
     }
 
     print "btrfs-list v$ver using btrfs v$btrfsver\n";
     exit 0;
-}
+} ## end if ($opt_version)
 
 # check opts
 
@@ -382,10 +381,10 @@ if (defined $opt_snap_max_used) {
     $opt_snap_max_used = human2raw($opt_snap_max_used);
 }
 
-if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) {    ## no critic
+if ($opt_color eq 'never' || ($opt_color eq 'auto' && !-t 1)) { ## no critic(InputOutput::ProhibitInteractiveTest)
     $ENV{'ANSI_COLORS_DISABLED'} = 1;
 }
-if (!$opt_wide && !-t 1) {                                         ## no critic
+if (!$opt_wide && !-t 1) {                                      ## no critic(InputOutput::ProhibitInteractiveTest)
 
     # wide if STDOUT is NOT a term
     $opt_wide = 1;
@@ -412,7 +411,7 @@ if ($opt_show_all) {
     $opt_show_puuid    = 1;
     $opt_show_ruuid    = 1;
     $opt_show_otime    = 1;
-}
+} ## end if ($opt_show_all)
 
 if ($opt_btrfs_binary && !-f -x $opt_btrfs_binary) {
     print STDERR "FATAL: Specified btrfs binary '$opt_btrfs_binary' doesn't exist or is not executable\n";
@@ -436,7 +435,8 @@ my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
 my ($version) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify) {
-    print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, we need at least version 3.18 (Dec 2014).\n";
+    print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, "
+      . "we need at least version 3.18 (Dec 2014).\n";
     exit 1;
 }
 
@@ -459,8 +459,8 @@ while (<$procfd>) {
             options => $4,
           };
         $mphash{$2} = 1;
-    }
-}
+    } ## end if (m{^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)})
+} ## end while (<$procfd>)
 close($procfd);
 
 # first ensure passed wantedFs is a mountpoint
@@ -481,10 +481,10 @@ if ($wantedFs) {
             last;
         }
         last;
-    }
+    } ## end while (1)
 
     debug("done, wantedFs=$wantedFs ori=$originalWantedFs");
-}
+} ## end if ($wantedFs)
 
 # get filesystems list
 
@@ -517,7 +517,7 @@ foreach (@{$cmd->{stdout}}) {
             # use the beggining of the uuid instead
             $label = substr($2, 0, 8);
         }
-    }
+    } ## end if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/)
     if (defined $fuuid and m{devid\s+(\d+)\s+size\s+(\S+).+path\s+(\S+)}) {
         my ($devid, $size, $dev) = ($1, human2raw($2), $3);
         if (not exists $filesystems{$fuuid}) {
@@ -531,8 +531,8 @@ foreach (@{$cmd->{stdout}}) {
             devid => $devid,
             size  => $size
         };
-    }
-}
+    } ## end if (defined $fuuid and...)
+} ## end foreach (@{$cmd->{stdout}})
 debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
 
 # now look for the mountpoints
@@ -557,7 +557,7 @@ foreach my $line (@procmounts) {
         $dev2mp{$real} ||= $line->{mp};
         $volid2mp{$real}{$subvolid} ||= $line->{mp};
     }
-}
+} ## end foreach my $line (@procmounts)
 
 foreach my $fuuid (keys %filesystems) {
     foreach my $dev (@{$filesystems{$fuuid}{'devices'} || []}) {
@@ -566,8 +566,8 @@ foreach my $fuuid (keys %filesystems) {
             $filesystems{$fuuid}{'volmp'}      = $volid2mp{$dev};
             last;
         }
-    }
-}
+    } ## end foreach my $dev (@{$filesystems...})
+} ## end foreach my $fuuid (keys %filesystems)
 
 debug("FILESYSTEMS HASH DUMP 2:", Dumper \%filesystems);
 
@@ -596,7 +596,7 @@ foreach my $fuuid (keys %filesystems) {
             $profile = lc($1);
             $total += human2raw($2);
             $used  += human2raw($3);
-        }
+        } ## end elsif (/^Data,([^:]+): Size:([^,]+), Used:(\S+)/)
         elsif (/^Metadata,([^:]+): Size:([^,]+), Used:(\S+)/) {
             $mprofile = lc($1);
         }
@@ -605,7 +605,7 @@ foreach my $fuuid (keys %filesystems) {
             #Free (estimated):                 405441961984      (min: 405441961984)
             #Free (estimated):            377.60GiB      (min: 377.60GiB)
             $freeEstimated = human2raw($1);
-        }
+        } ## end elsif (/Free\s*\(estimated\)\s*:\s*(\S+)/)
 
         if (m{^Unallocated:}) {
             $seenUnallocated = 1;
@@ -613,7 +613,7 @@ foreach my $fuuid (keys %filesystems) {
         elsif ($seenUnallocated && m{^\s*(/\S+)\s+(\d+)\s*$}) {
             $devFree{$1} = human2raw($2) + 0;
         }
-    }
+    } ## end foreach (@{$cmd->{stdout}})
 
     $vol{$fuuid}{df} = {
         id     => FAKE_ID_DF,
@@ -621,9 +621,9 @@ foreach my $fuuid (keys %filesystems) {
         gen    => 0,
         cgen   => 0,
         parent => '-',
-        top    => '-',                           # top_level
-        puuid  => PARENT_UUID_DF,                # parent_uuid
-        ruuid  => '-',                           # received_uuid
+        top    => '-',                        # top_level
+        puuid  => PARENT_UUID_DF,             # parent_uuid
+        ruuid  => '-',                        # received_uuid
         type   => 'fs',
         mode   => 'rw',
         rfer   => '-',
@@ -631,7 +631,11 @@ foreach my $fuuid (keys %filesystems) {
         free   => $total - $used,
         fssize => $fssize,
     };
-    debug("df for $fuuid (" . $filesystems{$fuuid}{label} . "), excl=$used, free=" . ($total - $used) . ", fssize=$fssize");
+    debug(  "df for $fuuid ("
+          . $filesystems{$fuuid}{label}
+          . "), excl=$used, free="
+          . ($total - $used)
+          . ", fssize=$fssize");
 
     # cmdline override
     $profile = $opt_profile if defined $opt_profile;
@@ -661,7 +665,7 @@ foreach my $fuuid (keys %filesystems) {
     # cvol btrfs sub list
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs subvolume list -pacguq }, $mp]);
 
-    # ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9fafce5e-6f45-3b44-bf72-6f94897217d4 uuid 20b76a70-dd70-b843-8265-a321ba4a5b61 path <FS_TREE>/DELETED
+    # ID 3332 gen 81668 cgen 2039 parent 0 top level 0 parent_uuid 9faf..17d4 uuid 20b7..5b61 path <FS_TREE>/DELETED
     # ID 1911 gen 81668 cgen 929 parent 5 top level 5 parent_uuid - uuid aec0705e-6cae-a941-854c-d95e0a36ba2c path main
     foreach (@{$cmd->{stdout}}) {
         my $vuuid = undef;
@@ -673,19 +677,19 @@ foreach my $fuuid (keys %filesystems) {
                 m{ID (\d+)} and $vuuid = $1;
             }
             $vol{$fuuid}{$vuuid}{uuid} = $vuuid;
-        }
+        } ## end if (/(\s|^)uuid ([0-9a-f-]+)/)
         elsif (/(\s|^)ID (\d+)/) {
 
             # old btrfsprogs
             $vuuid = $2;
             $vol{$fuuid}{$vuuid}{uuid} = $vuuid;
-        }
+        } ## end elsif (/(\s|^)ID (\d+)/)
         else {
             next;
         }
 
-        # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc47c09-fe59-4b4c-8ed6-b01a941bfd75 path sub1
-        $vol{$fuuid}{$vuuid}{puuid} = PARENT_UUID_NONE;    # old btrfsprogs don't have puuid, set a sane default
+        # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc4..fd75 path sub1
+        $vol{$fuuid}{$vuuid}{puuid} = PARENT_UUID_NONE; # old btrfsprogs don't have puuid, set a sane default
         /(\s|^)ID (\d+)/            and $vol{$fuuid}{$vuuid}{id}     = $2;
         /(\s|^)gen (\d+)/           and $vol{$fuuid}{$vuuid}{gen}    = $2;
         /(\s|^)cgen (\d+)/          and $vol{$fuuid}{$vuuid}{cgen}   = $2;
@@ -695,12 +699,12 @@ foreach my $fuuid (keys %filesystems) {
         /(\s|^)received_uuid (\S+)/ and $vol{$fuuid}{$vuuid}{ruuid}  = $2;
         /(\s|^)path (\S+)/          and $vol{$fuuid}{$vuuid}{path}   = $2;
         $vol{$fuuid}{$vuuid}{path} =~ s/^<FS_TREE>\///;
-        $vol{$fuuid}{$vuuid}{type} = 'subvol';                                                # by default, will be overriden below if applicable
-        $vol{$fuuid}{$vuuid}{mode} = 'rw';                                                    # by default, will be overriden below if applicable
+        $vol{$fuuid}{$vuuid}{type} = 'subvol';          # by default, will be overriden below if applicable
+        $vol{$fuuid}{$vuuid}{mode} = 'rw';              # by default, will be overriden below if applicable
         $vol{$fuuid}{$vuuid}{rfer} = 0;
         $vol{$fuuid}{$vuuid}{excl} = 0;
-        $vol{$fuuid}{$vuuid}{mp}   = $filesystems{$fuuid}{volmp}{$vol{$fuuid}{$vuuid}{id}};
-    }
+        $vol{$fuuid}{$vuuid}{mp} = $filesystems{$fuuid}{volmp}{$vol{$fuuid}{$vuuid}{id}};
+    } ## end foreach (@{$cmd->{stdout}})
 
     # now, list only snapshots, we also get their otime for free
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -us }, $mp]);
@@ -719,8 +723,8 @@ foreach my $fuuid (keys %filesystems) {
                 $vol{$fuuid}{$found}{type}  = 'snap';
                 $vol{$fuuid}{$found}{otime} = $otime if $otime;
             }
-        }
-    }
+        } ## end if (defined $found)
+    } ## end foreach (@{$cmd->{stdout}})
 
     # then, list readonly snapshots
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -ur }, $mp]);
@@ -729,7 +733,7 @@ foreach my $fuuid (keys %filesystems) {
         /(\s|^)ID ([0-9]+)/       and exists $vol{$fuuid}{$2} and $vol{$fuuid}{$2}{mode} = 'ro';
     }
     debug("VOL{FUUID=$fuuid} DUMP:", Dumper \$vol{$fuuid});
-}
+} ## end foreach my $fuuid (keys %filesystems)
 
 # get quota stuff
 
@@ -769,10 +773,11 @@ foreach my $fuuid (keys %filesystems) {
         # btrfs-progs v3.18 doesn't support --raw
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{status} || !@{$cmd->{stdout}}) {
-            print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n" if not $opt_quiet;
+            print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n"
+              if not $opt_quiet;
             $vol{$fuuid}{df}{noquota} = 1;
         }
-    }
+    } ## end if ($cmd->{status} || ...)
 
     # let's still fill the info for the main volume
     $vol{$fuuid}{5} = {
@@ -792,7 +797,7 @@ foreach my $fuuid (keys %filesystems) {
     foreach (@{$cmd->{stdout}}) {
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)}) {
             my ($qid, $id, $rfer, $excl) = ($1, $2, human2raw($3), human2raw($4));
-            next if $qid != 0;    # only check level 0 qgroups (leafs)
+            next if $qid != 0; # only check level 0 qgroups (leafs)
             if ($id < 256) {
                 if (not exists $vol{$fuuid}{$id}) {
                     $vol{$fuuid}{$id} = {
@@ -808,21 +813,21 @@ foreach my $fuuid (keys %filesystems) {
                         mode   => 'rw',
                         mp     => $filesystems{$fuuid}{volmp}{5},
                     };
-                }
+                } ## end if (not exists $vol{$fuuid...})
                 $vol{$fuuid}{$id}{rfer} = $rfer;
                 $vol{$fuuid}{$id}{excl} = $excl;
                 next;
-            }
+            } ## end if ($id < 256)
             foreach my $vuuid (keys %{$vol{$fuuid}}) {
                 if ($id eq $vol{$fuuid}{$vuuid}{id}) {
                     $vol{$fuuid}{$vuuid}{rfer} = $rfer;
                     $vol{$fuuid}{$vuuid}{excl} = $excl;
                     last;
                 }
-            }
-        }
-    }
-}
+            } ## end foreach my $vuuid (keys %{$vol...})
+        } ## end if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)})
+    } ## end foreach (@{$cmd->{stdout}})
+} ## end foreach my $fuuid (keys %filesystems)
 debug("VOL HASH DUMP (filesystem uuid - volume uuid - data):", Dumper \%vol);
 
 # ok, now, do the magic
@@ -840,7 +845,7 @@ sub recursive_add_children_of {
     $depth > $maxdepth and $maxdepth = $depth;
 
     foreach my $vuuid (sort { $volumes->{$a}{id} <=> $volumes->{$b}{id} } keys %$volumes) {
-        next if $seen{$vuuid};    # not needed, but just in case
+        next if $seen{$vuuid}; # not needed, but just in case
         my $vol = $volumes->{$vuuid};
         debug(  "..." x ($depth)
               . "parent_uuid=$parentuuid, currently working on id "
@@ -855,11 +860,11 @@ sub recursive_add_children_of {
             push @ordered, $vol;
             debug("..." x ($depth) . "^^^");
             $seen{$vuuid} = 1;
-            recursive_add_children_of(volumes => $volumes, depth => $depth + 1, parentuuid => $vuuid);    # unless $parentuuid eq '-';
-        }
-    }
+            recursive_add_children_of(volumes => $volumes, depth => $depth + 1, parentuuid => $vuuid); # unless $parentuuid eq '-';
+        } ## end if ($parentuuid eq $vol...)
+    } ## end foreach my $vuuid (sort { $volumes...})
     return;
-}
+} ## end sub recursive_add_children_of
 
 my @orderedAll;
 $opt_deleted ||= 0;
@@ -896,7 +901,7 @@ foreach my $fuuid (sort keys %filesystems) {
     foreach my $orphan (sort @orphans) {
         my $no_known_parent = 1;
         foreach my $potential_parent (@orphans) {
-            next if $orphan eq $potential_parent;    # skip myself
+            next if $orphan eq $potential_parent; # skip myself
             $no_known_parent = 0 if ($potential_parent eq $vol{$fuuid}{$orphan}{puuid});
         }
         debug(">>> orphan loop on $orphan, no known parent: $no_known_parent");
@@ -919,7 +924,7 @@ foreach my $fuuid (sort keys %filesystems) {
                 # and all the ghost' children, if any
                 debug(">>> adding children of ghost parent $parent_uuid (we should have at least $orphan)");
                 recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2, parentuuid => $parent_uuid);
-            }
+            } ## end if ($opt_deleted)
             else {
 
                 # add the orphan ourselves
@@ -930,8 +935,8 @@ foreach my $fuuid (sort keys %filesystems) {
                 # and all the orphans' children, if any
                 debug(">>> adding children of orphan $orphan");
                 recursive_add_children_of(volumes => $vol{$fuuid}, depth => 2, parentuuid => $orphan);
-            }
-        }
+            } ## end else [ if ($opt_deleted) ]
+        } ## end if ($no_known_parent ==...)
 
         if ($opt_deleted) {
 
@@ -939,8 +944,8 @@ foreach my $fuuid (sort keys %filesystems) {
             # actually be orphans, start again above
             @orphans = ();
             goto ORPHANS;
-        }
-    }
+        } ## end if ($opt_deleted)
+    } ## end foreach my $orphan (sort @orphans)
 
     # do we still have unseen volumes? (we shouldn't)
     foreach my $vuuid (keys %{$vol{$fuuid}}) {
@@ -950,7 +955,7 @@ foreach my $fuuid (sort keys %filesystems) {
     }
 
     push @orderedAll, @ordered;
-}
+} ## end foreach my $fuuid (sort keys...)
 
 # this sub returns the length of the longest item of a column or @sortedAll
 # and pushes the header name to @headers
@@ -958,7 +963,7 @@ my @header;
 
 sub longest {
     my $headerName = shift;
-    my $useDepth   = shift;    # whether 'depth' should be taken into account
+    my $useDepth   = shift; # whether 'depth' should be taken into account
     my $key        = shift;
 
     # ensure the header name always fits
@@ -973,7 +978,7 @@ sub longest {
     }
 
     return $longest;
-}
+} ## end sub longest
 
 # find the longest path (including leading spaces)
 # note that longest() also pushes the header to @headers
@@ -1040,17 +1045,21 @@ foreach my $line (@orderedAll) {
     if ($opt_snap_max_used) {
         next if ($type eq 'snap' && $line->{rfer} =~ /^\d+$/ && $line->{excl} > $opt_snap_max_used);
     }
-    $line->{mode} && $line->{mode} eq 'ro' and $type = "ro" . $type;
+    $type = "ro$type" if ($line->{mode} && $line->{mode} eq 'ro');
     my $extra = '';
     if (exists $line->{free}) {
         my $displayProfile = $line->{profile};
         $displayProfile .= "/" . $line->{mprofile} if ($line->{profile} ne $line->{mprofile});
-        $extra = "($displayProfile" . ', ' . pretty_print_str($line->{free}, 2) . ' free of ' . pretty_print_str($line->{fssize}, 2);
+        $extra =
+            "($displayProfile" . ', '
+          . pretty_print_str($line->{free}, 2)
+          . ' free of '
+          . pretty_print_str($line->{fssize}, 2);
         if ($line->{unallocatable} && $line->{unallocatable} > MiB) {
             $extra .= ', ' . pretty_print_str($line->{unallocatable}, 2) . ' unallocatable';
         }
         $extra .= ')';
-    }
+    } ## end if (exists $line->{free...})
     elsif (defined $line->{mp}) {
         $extra = $line->{mp};
     }
@@ -1063,8 +1072,8 @@ foreach my $line (@orderedAll) {
             if ($line->{$key} =~ m{^(....).+(....)$}) {
                 $line->{$key} = "$1..$2";
             }
-        }
-    }
+        } ## end foreach my $key (qw{ uuid puuid ruuid })
+    } ## end if (!$opt_wide)
 
     # replace our internal id==-1 by -
     $line->{id} =~ /^\d+$/ or $line->{id} = '-';
@@ -1086,4 +1095,4 @@ foreach my $line (@orderedAll) {
     push @fields, pretty_print($line->{rfer}, 1) if !$noquota;
     push @fields, pretty_print($line->{excl}, 1), $extra;
     printf $format, @fields;
-}
+} ## end foreach my $line (@orderedAll)
