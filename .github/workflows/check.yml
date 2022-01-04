@@ -17,11 +17,14 @@ jobs:
       run: perlcritic btrfs-list
     - name: perltidy
       run: |
-        perltidy --paren-tightness=2 --square-bracket-tightness=2 --brace-tightness=2 --maximum-line-length=180 btrfs-list
-        if cmp btrfs-list btrfs-list.tdy; then
+        perltidy -b -csc -iscl -nolc -nbbc -pt=2 -sbt=2 -bt=2 -l=120 -msc=1 btrfs-list
+        if ! test -e btrfs-list.tdy; then
           echo "OK: perltidy didn't find any change to make"
         else
           echo "KO: perltidy found changes to make:"
           diff -u btrfs-list btrfs-list.tdy
           exit 1
         fi
+    - name: perlcritic
+      run: |
+        perlcritic -3 --statistics --exclude 'ValuesAndExpressions::ProhibitConstantPragma|Variables::RequireLocalizedPunctuationVars|Subroutines::RequireArgUnpacking|InputOutput::RequireBriefOpen|RegularExpressions::RequireExtendedFormatting|Subroutines::ProhibitExcessComplexity|ControlStructures::ProhibitCascadingIfElse|RegularExpressions::ProhibitUnusedCapture|ValuesAndExpressions::ProhibitMismatchedOperators|Modules::ProhibitExcessMainComplexity|ErrorHandling::RequireCarping' btrfs-list
