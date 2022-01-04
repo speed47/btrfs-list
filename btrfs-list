@@ -62,6 +62,8 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
   -r, --raw                  show raw numbers instead of human-readable
       --btrfs-binary BIN     path to the btrfs binary to use instead of using
                                the first binary found in the PATH
+      --ignore-version-check try to continue even if btrfs-progs seems too old
+      --ignore-root-check    try to continue even if we are not root
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
@@ -102,6 +104,8 @@ EOF
 GetOptions(
     'debug'                         => \my $opt_debug,
     'version'                       => \my $opt_version,
+    'ignore-version-check'          => \my $opt_ignore_version_check,
+    'ignore-root-check'             => \my $opt_ignore_root_check,
     'q|quiet'                       => \my $opt_quiet,
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
@@ -435,14 +439,16 @@ if ($wantedFs) {
 my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
 my ($version) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
 
-if (version->declare($version)->numify lt version->declare("3.18")->numify) {
+if (version->declare($version)->numify lt version->declare("3.18")->numify && !$opt_ignore_version_check) {
     print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, "
       . "we need at least version 3.18 (Dec 2014).\n";
+    print STDERR "If you think this is in error, use --ignore-version-check.\n";
     exit 1;
-}
+} ## end if (version->declare($version...))
 
-if ($< != 0) {
+if ($< != 0 && !$opt_ignore_root_check) {
     print STDERR "FATAL: you must be root to use this command\n";
+    print STDERR "If you think this is in error, use --ignore-root-check\n";
     exit 1;
 }
 
