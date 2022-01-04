@@ -1050,13 +1050,15 @@ foreach my $line (@orderedAll) {
     if (exists $line->{free}) {
         my $displayProfile = $line->{profile};
         $displayProfile .= "/" . $line->{mprofile} if ($line->{profile} ne $line->{mprofile});
-        $extra =
-            "($displayProfile" . ', '
-          . pretty_print_str($line->{free}, 2)
-          . ' free of '
-          . pretty_print_str($line->{fssize}, 2);
+        $extra = sprintf(
+            "(%s, %s/%s free, %.02f%%",
+            $displayProfile,
+            pretty_print_str($line->{free},   2),
+            pretty_print_str($line->{fssize}, 2),
+            $line->{free} * 100 / $line->{fssize}
+        );
         if ($line->{unallocatable} && $line->{unallocatable} > MiB) {
-            $extra .= ', ' . pretty_print_str($line->{unallocatable}, 2) . ' unallocatable';
+            $extra .= sprintf(', %s unallocatable', pretty_print_str($line->{unallocatable}, 2));
         }
         $extra .= ')';
     } ## end if (exists $line->{free...})
