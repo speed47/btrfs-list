@@ -355,6 +355,7 @@ if ($opt_version) {
         my $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ git -C }, $dir, qw{ describe --tags --dirty }]);
         if ($cmd->{status} == 0 && $cmd->{stdout}) {
             $ver = $cmd->{stdout}[0];
+            $ver =~ s/^v//;
         }
     } ## end if (-d "$dir/.git")
 
