@@ -402,7 +402,10 @@ devid    3 size 250.00MiB used 164.00MiB path /dev/loop3
 devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 =cut
 
-$cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
+$cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem show --raw }, $wantedFs ? $wantedFs : ()]);
+if (!@{$cmd->{stdout}} || $cmd->{status}) {
+    $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
+}
 my ($label, $fuuid, %filesystems);
 foreach (@{$cmd->{stdout}}) {
     if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/) {
