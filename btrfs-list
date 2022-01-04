@@ -71,9 +71,10 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                take up more space than SIZE
   -f, --free-space           only show free space on the filesystem
 
-  -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
-                               'raid1', 'raid10', 'raid5' or 'raid6', for
-                               free space calculation (default: autodetect)
+  -p, --profile PROFILE      override data profile detection and consider it
+                                as 'dup', 'single', 'raid0', 'raid1',
+                                'raid1c3', 'raid1c4', 'raid10', 'raid5' or
+                               'raid6' for free space calculation
 
   -a, --show-all             show all information for each item
       --show-gen             show generation of each item
@@ -238,6 +239,10 @@ sub pretty_print {
 #>>>
 }
 
+sub pretty_print_str {
+    return sprintf("%s%s%s%s%s", pretty_print(@_));
+}
+
 sub human2raw {
     my $human = shift;
     return $human if ($human !~ /^((\d+)(\.\d+)?)([kMGTP])/);
@@ -247,6 +252,97 @@ sub human2raw {
     elsif ($4 eq 'M') { return $1 * MiB; }
     elsif ($4 eq 'k') { return $1 * KiB; }
     return $human;
+}
+
+sub compute_allocatable_for_profile {
+    my ($profile, $free, $devBytesRef) = @_;
+    my $unallocFree = 0;
+    my $sliceSize   = TiB;
+    my %devBytes    = %$devBytesRef;
+    while (1) {
+
+        # reduce sliceSize if needed, note that btrfs never allocates chunks
+        # smaller than 1 MiB
+        if ($sliceSize > MiB && grep { $_ < 3 * $sliceSize } values %devBytes) {
+            $sliceSize /= 2;
+            next;
+        }
+
+        # sort device by remaining free space.
+        # $sk[0] has the most available space, then $sk[1], etc.
+        my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
+
+        if ($profile eq 'raid1') {
+            last if ($devBytes{$sk[1]} <= $sliceSize);    # out of space
+            $unallocFree += $sliceSize;
+            $devBytes{$sk[0]} -= $sliceSize;
+            $devBytes{$sk[1]} -= $sliceSize;
+        }
+        elsif ($profile eq 'raid1c3') {
+            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
+            last if ($devBytes{$sk[2]} <= $sliceSize);    # out of space
+            $unallocFree += $sliceSize;
+            $devBytes{$sk[0]} -= $sliceSize;
+            $devBytes{$sk[1]} -= $sliceSize;
+            $devBytes{$sk[2]} -= $sliceSize;
+        }
+        elsif ($profile eq 'raid1c4') {
+            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
+            last if ($devBytes{$sk[3]} <= $sliceSize);    # out of space
+            $unallocFree += $sliceSize;
+            $devBytes{$sk[0]} -= $sliceSize;
+            $devBytes{$sk[1]} -= $sliceSize;
+            $devBytes{$sk[2]} -= $sliceSize;
+            $devBytes{$sk[3]} -= $sliceSize;
+        }
+        elsif ($profile eq 'raid10') {
+            my @sk = sort { $devBytes{$b} <=> $devBytes{$a} } keys %devBytes;
+            last if ($devBytes{$sk[3]} <= $sliceSize);    # out of space
+            $unallocFree += $sliceSize * 2;
+            $devBytes{$sk[0]} -= $sliceSize;
+            $devBytes{$sk[1]} -= $sliceSize;
+            $devBytes{$sk[2]} -= $sliceSize;
+            $devBytes{$sk[3]} -= $sliceSize;
+        }
+        elsif ($profile eq 'raid5' || $profile eq 'raid6') {
+            my $parity = ($profile eq 'raid5' ? 1 : 2);
+            my $nb     = grep { $_ > $sliceSize } values %devBytes;
+            last if $nb < $parity + 1;                    # out of spacee
+            foreach my $dev (keys %devBytes) {
+                $devBytes{$dev} -= $sliceSize if $devBytes{$dev} > $sliceSize;
+            }
+            $unallocFree += ($nb - $parity) * $sliceSize;
+        }
+        elsif (grep { $profile eq $_ } qw( raid0 single dup )) {
+
+            # those are easy, we just add up every free space of every device
+            # and call it a day (no need to loop through the allocator)
+            $unallocFree += $_ for values %devBytes;
+            $unallocFree /= 2 if $profile eq 'dup';
+            %devBytes = ();
+            last;
+        }
+        else {
+            print "ERROR: Unknown data profile '$profile'!\n";
+            exit 1;
+        }
+    }
+    $free += $unallocFree;
+
+    # if free is < 1 MiB, then consider it as full to the brim,
+    # because when FS is completely full, it always shows a couple
+    # kB left (depending on the profile), even if not a single more
+    # byte can be written.
+    $free = 0 if $free < MiB;
+
+    # remaining space on each device is unallocatable, don't count space
+    # below the MiB for a given device for the same reason as above
+    my $unallocatable = 0;
+    foreach (values %devBytes) {
+        $unallocatable += ($_ - MiB) if $_ > MiB;
+    }
+
+    return {allocatable => $free, unallocatable => $unallocatable};
 }
 
 # MAIN
@@ -300,7 +396,7 @@ if (defined $opt_no_wide) {
     $opt_wide = 0;
 }
 
-if (defined $opt_profile && !grep { $opt_profile eq $_ } qw{ single dup raid0 raid1 raid10 raid5 raid6 }) {
+if (defined $opt_profile && $opt_profile !~ /^(raid([0156]|1c[34]|10)|single|dup)$/) {
     print STDERR "FATAL: invalid argument for --profile\n";
     help();
     exit 1;
@@ -422,15 +518,19 @@ foreach (@{$cmd->{stdout}}) {
             $label = substr($2, 0, 8);
         }
     }
-    if (defined $fuuid and m{devid\s.+path\s+(\S+)}) {
-        my $dev = $1;
+    if (defined $fuuid and m{devid\s+(\d+)\s+size\s+(\S+).+path\s+(\S+)}) {
+        my ($devid, $size, $dev) = ($1, human2raw($2), $3);
         if (not exists $filesystems{$fuuid}) {
-            $filesystems{$fuuid} = {uuid => $fuuid, label => $label, devices => []};
+            $filesystems{$fuuid} = {uuid => $fuuid, label => $label, devices => [], devinfo => {}};
         }
         if (-l $dev) {
             $dev = link2real($dev);
         }
         push @{$filesystems{$fuuid}{'devices'}}, $dev;
+        $filesystems{$fuuid}{'devinfo'}{$dev} = {
+            devid => $devid,
+            size  => $size
+        };
     }
 }
 debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
@@ -483,16 +583,22 @@ foreach my $fuuid (keys %filesystems) {
     if (!@{$cmd->{stdout}} || $cmd->{status}) {
         $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem usage }, $mp]);
     }
-    my ($seenUnallocated, %devFree, $profile);
-    my ($total, $used, $freeEstimated) = (0, 0, 0);
+    my ($seenUnallocated, %devFree, $profile, $mprofile);
+    my ($total, $fssize, $used, $freeEstimated) = (0, 0, 0, 0);
     foreach (@{$cmd->{stdout}}) {
-        if (/^Data,([^:]+): Size:([^,]+), Used:(\S+)/) {
+        if (/Device\s+size:\s*(\S+)/) {
+            $fssize = human2raw($1);
+        }
+        elsif (/^Data,([^:]+): Size:([^,]+), Used:(\S+)/) {
 
-            #Data,RAID1: Size:9.90TiB, Used:9.61TiB
-            #Data,RAID1: Size:10881302659072, Used:10569277333504
+            #v3.18:  Data,RAID1: Size:9.90TiB, Used:9.61TiB
+            #v3.19+: Data,RAID1: Size:10881302659072, Used:10569277333504
             $profile = lc($1);
             $total += human2raw($2);
             $used  += human2raw($3);
+        }
+        elsif (/^Metadata,([^:]+): Size:([^,]+), Used:(\S+)/) {
+            $mprofile = lc($1);
         }
         elsif (/Free\s*\(estimated\)\s*:\s*(\S+)/) {
 
@@ -523,69 +629,32 @@ foreach my $fuuid (keys %filesystems) {
         rfer   => '-',
         excl   => $used,
         free   => $total - $used,
+        fssize => $fssize,
     };
+    debug("df for $fuuid (" . $filesystems{$fuuid}{label} . "), excl=$used, free=" . ($total - $used) . ", fssize=$fssize");
 
     # cmdline override
     $profile = $opt_profile if defined $opt_profile;
-    $vol{$fuuid}{df}{profile} = $profile;
 
-    if (defined $profile && %devFree) {
-        my $unallocFree = 0;
-        my $sliceSize   = TiB;
-        while (1) {
-
-            # reduce sliceSize if needed
-            if ($sliceSize > MiB && grep { $_ < 3 * $sliceSize } values %devFree) {
-                $sliceSize /= 2;
-                next;
-            }
-            if ($profile eq 'raid1') {
-                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
-                last if ($devFree{$sk[1]} <= $sliceSize);
-                $unallocFree += $sliceSize;
-                $devFree{$sk[0]} -= $sliceSize;
-                $devFree{$sk[1]} -= $sliceSize;
-            }
-            elsif ($profile eq 'raid10') {
-                my @sk = sort { $devFree{$b} <=> $devFree{$a} } keys %devFree;
-                last if ($devFree{$sk[3]} <= $sliceSize);
-                $unallocFree += $sliceSize * 2;
-                $devFree{$sk[0]} -= $sliceSize;
-                $devFree{$sk[1]} -= $sliceSize;
-                $devFree{$sk[2]} -= $sliceSize;
-                $devFree{$sk[3]} -= $sliceSize;
-            }
-            elsif ($profile eq 'raid5' || $profile eq 'raid6') {
-                my $parity = ($profile eq 'raid5' ? 1 : 2);
-                my $nb     = grep { $_ > $sliceSize } values %devFree;
-                last if $nb < $parity + 1;
-                foreach my $dev (keys %devFree) {
-                    $devFree{$dev} -= $sliceSize if $devFree{$dev} > $sliceSize;
-                }
-                $unallocFree += ($nb - $parity) * $sliceSize;
-            }
-            elsif (grep { $profile eq $_ } qw( raid0 single dup )) {
-                $unallocFree += $_ for values %devFree;
-                $unallocFree /= 2 if $profile eq 'dup';
-                %devFree = ();
-                last;
-            }
-        }
-        $vol{$fuuid}{df}{free} += $unallocFree;
-
-        # remove 1 MiB from free, because when FS is completely full,
-        # it always shows a couple kB left (depending on the profile),
-        # even if not a single more byte can be written.
-        $vol{$fuuid}{df}{free} -= MiB;
-
-        # obviously if with this we're negative, then we're definitely out of space
-        $vol{$fuuid}{df}{free} = 0 if $vol{$fuuid}{df}{free} < 0;
-
-        # unallocatable space
-        foreach (values %devFree) {
-            $vol{$fuuid}{df}{unallocatable} += ($_ - MiB) if $_ > MiB;
-        }
+    if (!$profile) {
+        print STDERR "WARNING: No profile found, assuming single\n";
+        $profile = "single";
     }
+
+    $vol{$fuuid}{df}{profile}  = $profile;
+    $vol{$fuuid}{df}{mprofile} = $mprofile;
+
+    my $computed = compute_allocatable_for_profile($profile, $vol{$fuuid}{df}{free}, \%devFree);
+    $vol{$fuuid}{df}{free}          = $computed->{allocatable};
+    $vol{$fuuid}{df}{unallocatable} = $computed->{unallocatable};
+
+    # also compute total allocatable size if FS fs empty
+    my %devSize;
+    foreach my $dev (@{$filesystems{$fuuid}{devices}}) {
+        $devSize{$dev} = $filesystems{$fuuid}{devinfo}{$dev}{size};
+    }
+    $computed = compute_allocatable_for_profile($profile, 0, \%devSize);
+    $vol{$fuuid}{df}{fssize} = $computed->{allocatable};
 
     next if $opt_free_space;
 
@@ -974,9 +1043,11 @@ foreach my $line (@orderedAll) {
     $line->{mode} && $line->{mode} eq 'ro' and $type = "ro" . $type;
     my $extra = '';
     if (exists $line->{free}) {
-        $extra = '(' . $line->{profile} . ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{free}, 2)) . ' free';
-        if (exists $line->{unallocatable} && $line->{unallocatable} > MiB) {
-            $extra .= ', ' . sprintf("%s%s%s%s%s", pretty_print($line->{unallocatable})) . ' unallocatable';
+        my $displayProfile = $line->{profile};
+        $displayProfile .= "/" . $line->{mprofile} if ($line->{profile} ne $line->{mprofile});
+        $extra = "($displayProfile" . ', ' . pretty_print_str($line->{free}, 2) . ' free of ' . pretty_print_str($line->{fssize}, 2);
+        if ($line->{unallocatable} && $line->{unallocatable} > MiB) {
+            $extra .= ', ' . pretty_print_str($line->{unallocatable}, 2) . ' unallocatable';
         }
         $extra .= ')';
     }
