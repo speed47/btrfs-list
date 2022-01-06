@@ -542,6 +542,11 @@ foreach (@{$cmd->{stdout}}) {
 } ## end foreach (@{$cmd->{stdout}})
 debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
 
+if (!%filesystems) {
+    print "No btrfs filesystem found.\n";
+    exit 0;
+}
+
 # now look for the mountpoints
 
 my %dev2mp;
