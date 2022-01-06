@@ -45,9 +45,9 @@ use constant FAKE_ID_GHOST => -2;
 
 sub help {
     print <<"EOF";
-Usage: $0 [options] [mountpoint]
+Usage: $0 [options] [mountpoints]
 
-If no [mountpoint] is specified, display info for all btrfs filesystems.
+If no [mountpoints] are specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
       --debug                enable debug output
@@ -425,15 +425,6 @@ if ($opt_btrfs_binary && !-f -x $opt_btrfs_binary) {
 
 help() if $opt_help;
 
-# check args
-
-my $wantedFs = shift;
-if ($wantedFs) {
-
-    # canonicalize
-    $wantedFs = link2real($wantedFs);
-}
-
 # check btrfs-progs version
 
 my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
@@ -470,28 +461,32 @@ while (<$procfd>) {
 } ## end while (<$procfd>)
 close($procfd);
 
-# first ensure passed wantedFs is a mountpoint
-my $originalWantedFs = $wantedFs;
-if ($wantedFs) {
-    $wantedFs =~ s{/+}{/}g;
-    $wantedFs =~ s{/$}{};
+# get passed mountpoints
+my @mountPoints = @ARGV;
+
+# ensure these (if any) are mountpoints
+foreach my $mp (@mountPoints) {
+    # canonicalize
+    $mp = link2real($mp);
+
+    # if not a mp, find a parent that is
     while (1) {
-        $wantedFs ||= '/';
+        $mp ||= '/';
         my $ismp = 0;
         foreach (@procmounts) {
-            next if ($_->{mp} ne $wantedFs);
+            next if ($_->{mp} ne $mp);
             $ismp = 1;
             last;
         }
         if (!$ismp) {
-            next if ($wantedFs =~ s{/[^/]+$}{});
+            next if ($mp =~ s{/[^/]+$}{});
             last;
         }
         last;
     } ## end while (1)
 
-    debug("done, wantedFs=$wantedFs ori=$originalWantedFs");
-} ## end if ($wantedFs)
+    debug("done, mp is: $mp");
+} ## end foreach my $mp (@mountPoints)
 
 # get filesystems list
 
@@ -505,12 +500,20 @@ devid    3 size 250.00MiB used 164.00MiB path /dev/loop3
 devid    4 size 250.00MiB used 164.00MiB path /dev/loop4
 =cut
 
-$cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem show --raw }, $wantedFs ? $wantedFs : ()]);
-if (!@{$cmd->{stdout}} || $cmd->{status}) {
-    $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, $wantedFs ? $wantedFs : ()]);
-}
+# if no mountpoints specified, use undef to run a 'btrfs fi show' once with no params (all fs)
+@mountPoints = (undef) if !@mountPoints;
+
+my @fishow = ();
+foreach my $mp (@mountPoints) {
+    $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs filesystem show --raw }, defined $mp ? $mp : ()]);
+    if (!@{$cmd->{stdout}} || $cmd->{status}) {
+        $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs filesystem show }, defined $mp ? $mp : ()]);
+    }
+    push @fishow, @{$cmd->{stdout}} if $cmd->{stdout};
+} ## end foreach my $mp (@mountPoints)
+
 my ($label, $fuuid, %filesystems);
-foreach (@{$cmd->{stdout}}) {
+foreach (@fishow) {
     if (/^Label:\s+(\S+)\s+uuid:\s+([0-9a-f-]+)/) {
         $label = $1;
         $fuuid = $2;
@@ -539,7 +542,7 @@ foreach (@{$cmd->{stdout}}) {
             size  => $size
         };
     } ## end if (defined $fuuid and...)
-} ## end foreach (@{$cmd->{stdout}})
+} ## end foreach (@fishow)
 debug("FILESYSTEMS HASH DUMP 1:", Dumper \%filesystems);
 
 if (!%filesystems) {
