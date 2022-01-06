@@ -437,7 +437,7 @@ if ($wantedFs) {
 # check btrfs-progs version
 
 my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
-my ($version) = $cmd->{stdout}->[0] =~ /v([0-9.]+)/;
+my ($version) = $cmd->{stdout}->[0] =~ /v(\d+\.\d+)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify && !$opt_ignore_version_check) {
     print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, "
