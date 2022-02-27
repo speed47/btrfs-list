@@ -53,7 +53,7 @@ If no [mountpoints] are specified, display info for all btrfs filesystems.
       --debug                enable debug output
   -q, --quiet                silence the quota disabled & quota rescan warnings
       --version              display version info
-      --color=WHEN           colorize the output; WHEN can be 'never',
+      --color WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
                                colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
@@ -94,6 +94,9 @@ If no [mountpoints] are specified, display info for all btrfs filesystems.
                                default if STDOUT is NOT a term)
       --no-wide              always truncate uuids on output (useful to
                                override above default)
+      --max-name-len LEN     trim long subvol names to LEN. 0 means never trim.
+                               Defaults to 80 if STDOUT is a term, 0 otherwise.
+      --indent LEN           number of spaces to indent the tree, default: 3.
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 
@@ -123,6 +126,8 @@ GetOptions(
     'show-otime'                    => \my $opt_show_otime,
     'wide|w'                        => \my $opt_wide,
     'no-wide'                       => \my $opt_no_wide,
+    'max-name-len=i'                => \my $opt_max_name_len,
+    'indent=i'                      => \my $opt_indent,
     'snap-min-used|snap-min-excl=s' => \my $opt_snap_min_used,
     'snap-max-used|snap-max-excl=s' => \my $opt_snap_max_used,
     'n|no-color'                    => \my $opt_no_color,
@@ -399,6 +404,16 @@ if (defined $opt_no_wide) {
     # --no-wide always wins
     $opt_wide = 0;
 }
+
+if (!defined $opt_max_name_len) {
+    # if STDOUT is a term, set to 80, otherwise 0 (no limit)
+    $opt_max_name_len = (-t 1 ? 80 : 0); ## no critic(InputOutput::ProhibitInteractiveTest)
+}
+if ($opt_max_name_len > 0 && $opt_max_name_len < 4) {
+    $opt_max_name_len = 4;
+}
+
+$opt_indent //= 4;
 
 if (defined $opt_profile && $opt_profile !~ /^(raid([0156]|1c[34]|10)|single|dup)$/) {
     print STDERR "FATAL: invalid argument for --profile\n";
@@ -997,7 +1012,18 @@ sub longest {
 
 # find the longest path (including leading spaces)
 # note that longest() also pushes the header to @headers
-my $format = "%-" . longest('NAME', 1, 'path') . "s ";
+my $format;
+
+# special case for path: if opt_max_name_len is specified,
+# and it is shorter that longest('NAME', 1, 'path'), use it
+# instead
+my $formatpathlen = longest('NAME', 1, 'path');
+if ($opt_max_name_len > 0 && $opt_max_name_len < $formatpathlen) {
+    $format = "%-" . $opt_max_name_len . "s ";
+}
+else {
+    $format = "%-" . $formatpathlen . "s ";
+}
 
 if ($opt_show_id) {
     $format .= "%" . longest('ID', 0, 'id') . "s ";
@@ -1098,7 +1124,25 @@ foreach my $line (@orderedAll) {
     # replace our internal '*' and '+' by '-'
     $line->{puuid} = '-' if ($line->{'puuid'} && length($line->{puuid}) == 1);
 
-    my @fields = " " x ($line->{depth} * 3) . $line->{path};
+    # shorten path if --max-name-len is specified
+    my $pathprefix  = " " x ($line->{depth} * $opt_indent);
+    my $pathdisplay = $line->{path};
+    if ($opt_max_name_len > 0 && length($line->{path}) > $opt_max_name_len) {
+        my $remaininglen = $opt_max_name_len - length($pathprefix) - 4;
+
+        # if we exceed the available space just with the indentation, fallback
+        # to limit the indentation and just display '[..]' for the subvol name
+        if ($remaininglen <= 4) {
+            $pathprefix  = " " x ($opt_max_name_len - 4);
+            $pathdisplay = '[..]';
+        }
+        else {
+            $pathdisplay = substr($line->{'path'}, 0, $remaininglen / 2) . '[..]'
+              . substr($line->{'path'}, length($line->{'path'}) - $remaininglen / 2);
+        }
+    } ## end if ($opt_max_name_len ...)
+
+    my @fields = $pathprefix . $pathdisplay;
     push @fields, $line->{id}     || '-' if $opt_show_id;
     push @fields, $line->{parent} || '-' if $opt_show_parent;
     push @fields, $line->{top}    || '-' if $opt_show_toplevel;
