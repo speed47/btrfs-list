@@ -413,7 +413,7 @@ if ($opt_max_name_len > 0 && $opt_max_name_len < 4) {
     $opt_max_name_len = 4;
 }
 
-$opt_indent //= 4;
+$opt_indent //= 3;
 
 if (defined $opt_profile && $opt_profile !~ /^(raid([0156]|1c[34]|10)|single|dup)$/) {
     print STDERR "FATAL: invalid argument for --profile\n";
@@ -1002,7 +1002,7 @@ sub longest {
 
     # loop through all the items
     foreach my $item (@orderedAll) {
-        my $len = ($useDepth ? (($item->{depth} || 0) * 3) : 0);
+        my $len = ($useDepth ? (($item->{depth} || 0) * $opt_indent) : 0);
         $len += length($item->{$key} || '');
         $longest = $len if $len > $longest;
     }
