@@ -718,7 +718,7 @@ foreach my $fuuid (keys %filesystems) {
             next;
         }
 
-        # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc4..fd75 path sub1
+        # ID 257 gen 17 cgen 11 parent 5 top level 5 parent_uuid - received_uuid - uuid 9bc4..fd75 path sub1 with spaces
         $vol{$fuuid}{$vuuid}{puuid} = PARENT_UUID_NONE; # old btrfsprogs don't have puuid, set a sane default
         /(\s|^)ID (\d+)/            and $vol{$fuuid}{$vuuid}{id}     = $2;
         /(\s|^)gen (\d+)/           and $vol{$fuuid}{$vuuid}{gen}    = $2;
@@ -727,7 +727,7 @@ foreach my $fuuid (keys %filesystems) {
         /(\s|^)top level (\d+)/     and $vol{$fuuid}{$vuuid}{top}    = $2;
         /(\s|^)parent_uuid (\S+)/   and $vol{$fuuid}{$vuuid}{puuid}  = $2;
         /(\s|^)received_uuid (\S+)/ and $vol{$fuuid}{$vuuid}{ruuid}  = $2;
-        /(\s|^)path (\S+)/          and $vol{$fuuid}{$vuuid}{path}   = $2;
+        /(\s|^)path (.+)/           and $vol{$fuuid}{$vuuid}{path}   = $2;
         $vol{$fuuid}{$vuuid}{path} =~ s/^<FS_TREE>\///;
         $vol{$fuuid}{$vuuid}{type} = 'subvol';          # by default, will be overriden below if applicable
         $vol{$fuuid}{$vuuid}{mode} = 'rw';              # by default, will be overriden below if applicable
@@ -739,7 +739,7 @@ foreach my $fuuid (keys %filesystems) {
     # now, list only snapshots, we also get their otime for free
     $cmd = run_cmd(cmd => [qw{ btrfs subvolume list -us }, $mp]);
 
-    # ID 694 gen 30002591 cgen 30002589 top level 5 otime 2022-01-02 14:37:14 path test-backup2
+    # ID 694 gen 30002591 cgen 30002589 top level 5 otime 2022-01-02 14:37:14 path test backup2 with spaces
     foreach (@{$cmd->{stdout}}) {
         my ($found, $otime);
         /(\s|^)uuid ([0-9a-f-]+)/ and exists $vol{$fuuid}{$2} and $found = $2;
