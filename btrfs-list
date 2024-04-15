@@ -793,6 +793,31 @@ foreach my $fuuid (keys %filesystems) {
     -d $mp      or next;
     next if $opt_free_space;
 
+    # let's still fill the info for the main volume
+    $vol{$fuuid}{5} = {
+        id     => 5,
+        path   => "[main]",
+        gen    => 0,
+        cgen   => 0,
+        parent => '-',
+        top    => '-',
+        uuid   => '-',                     # may be filled below
+        puuid  => PARENT_UUID_NONE_MAINVOL,
+        ruuid  => '-',
+        type   => 'mainvol',
+        mode   => 'rw',
+        mp     => $mp,
+    };
+
+    # grab the uuid of the main volume, note that sometimes there is none, and UUID is reported as '-'
+    # also get the current geenration, and the gen at creation (which should always be 0)
+    $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs subvolume show -b }, $mp]);
+    foreach (@{$cmd->{stdout}}) {
+        /^\s*UUID:\s*([0-9a-f-]+)/ and $vol{$fuuid}{5}{uuid} = $1;
+        /Generation:\s*(\d+)/      and $vol{$fuuid}{5}{gen}  = $1;
+        /Gen at creation:\s*(\d+)/ and $vol{$fuuid}{5}{cgen} = $1;
+    }
+
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs quota rescan -s }, $mp]);
     if ($cmd->{stdout}->[0] && $cmd->{stdout}->[0] =~ /operation running|current key/) {
         print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n" if not $opt_quiet;
@@ -809,21 +834,6 @@ foreach my $fuuid (keys %filesystems) {
             $vol{$fuuid}{df}{noquota} = 1;
         }
     } ## end if ($cmd->{status} || ...)
-
-    # let's still fill the info for the main volume
-    $vol{$fuuid}{5} = {
-        id     => 5,
-        path   => "[main]",
-        gen    => 0,
-        cgen   => 0,
-        parent => '-',
-        top    => '-',
-        puuid  => PARENT_UUID_NONE_MAINVOL,
-        ruuid  => '-',
-        type   => 'mainvol',
-        mode   => 'rw',
-        mp     => $mp,
-    };
 
     foreach (@{$cmd->{stdout}}) {
         if (m{^(\d+)/(\d+)\s+(\S+)\s+(\S+)}) {
