@@ -22,15 +22,15 @@ into this:
 # Usage
 
 ```
-Usage: btrfs-list [options] [mountpoint]
+Usage: btrfs-list [options] [mountpoint1 [mountpoint2 [...]]]
 
-If no [mountpoint] is specified, display info for all btrfs filesystems.
+If no mountpoints are specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
       --debug                enable debug output
   -q, --quiet                silence the quota disabled & quota rescan warnings
       --version              display version info
-      --color=WHEN           colorize the output; WHEN can be 'never',
+      --color WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
                                colorize if STDOUT is a term)
   -n, --no-color             synonym of --color=never
@@ -39,6 +39,8 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
   -r, --raw                  show raw numbers instead of human-readable
       --btrfs-binary BIN     path to the btrfs binary to use instead of using
                                the first binary found in the PATH
+      --ignore-version-check try to continue even if btrfs-progs seems too old
+      --ignore-root-check    try to continue even if we are not root
 
   -s, --hide-snap            hide all snapshots
   -S, --snap-only            only show snapshots
@@ -49,9 +51,10 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                take up more space than SIZE
   -f, --free-space           only show free space on the filesystem
 
-  -p, --profile PROFILE      consider data profile as 'dup', 'single', 'raid0',
-                               'raid1', 'raid10', 'raid5' or 'raid6', for
-                               free space calculation (default: autodetect)
+  -p, --profile PROFILE      override data profile detection and consider it
+                                as 'dup', 'single', 'raid0', 'raid1',
+                                'raid1c3', 'raid1c4', 'raid10', 'raid5' or
+                               'raid6' for free space calculation
 
   -a, --show-all             show all information for each item
       --show-gen             show generation of each item
@@ -68,6 +71,9 @@ If no [mountpoint] is specified, display info for all btrfs filesystems.
                                default if STDOUT is NOT a term)
       --no-wide              always truncate uuids on output (useful to
                                override above default)
+      --max-name-len LEN     trim long subvol names to LEN. 0 means never trim.
+                               Defaults to 80 if STDOUT is a term, 0 otherwise.
+      --indent LEN           number of spaces to indent the tree, default: 3.
 
 SIZE can be a number (in bytes), or a number followed by k, M, G, T or P.
 ```

@@ -45,13 +45,13 @@ use constant FAKE_ID_GHOST => -2;
 
 sub help {
     print <<"EOF";
-Usage: $0 [options] [mountpoints]
+Usage: $0 [options] [mountpoint1 [mountpoint2 [...]]]
 
-If no [mountpoints] are specified, display info for all btrfs filesystems.
+If no mountpoints are specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
       --debug                enable debug output
-  -q, --quiet                silence the quota disabled & quota rescan warnings
+  -q, --quiet                silence warnings
       --version              display version info
       --color WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
@@ -443,7 +443,7 @@ help() if $opt_help;
 # check btrfs-progs version
 
 my $cmd = run_cmd(fatal => 1, cmd => [qw{ btrfs --version }]);
-my ($version) = $cmd->{stdout}->[0] =~ /v(\d+\.\d+)/;
+my ($version_verbatim, $version) = $cmd->{stdout}->[0] =~ /v((\d+\.\d+)\S*)/;
 
 if (version->declare($version)->numify lt version->declare("3.18")->numify && !$opt_ignore_version_check) {
     print STDERR "FATAL: you're using an old version of btrfs-progs, v$version, "
