@@ -652,6 +652,7 @@ foreach my $fuuid (keys %filesystems) {
         cgen   => 0,
         parent => '-',
         top    => '-',                        # top_level
+        uuid   => $fuuid,
         puuid  => PARENT_UUID_DF,             # parent_uuid
         ruuid  => '-',                        # received_uuid
         type   => 'fs',
