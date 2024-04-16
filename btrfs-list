@@ -51,7 +51,8 @@ If no mountpoints are specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
       --debug                enable debug output
-  -q, --quiet                silence warnings
+  -q, --quiet                silence quota disabled & quota rescan warnings,
+                               repeat to silence all other warnings.
       --version              display version info
       --color WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
@@ -110,7 +111,7 @@ GetOptions(
     'version'                       => \my $opt_version,
     'ignore-version-check'          => \my $opt_ignore_version_check,
     'ignore-root-check'             => \my $opt_ignore_root_check,
-    'q|quiet'                       => \my $opt_quiet,
+    'q|quiet+'                      => \my $opt_quiet,
     's|hide-snap'                   => \my $opt_hide_snapshots,
     'S|snap-only'                   => \my $opt_only_snapshots,
     'f|free-space'                  => \my $opt_free_space,
@@ -150,6 +151,13 @@ sub debug {
     return;
 }
 
+sub warning {
+    my ($level, @lines) = @_;
+    return if ($level <= $opt_quiet);
+    print STDERR "WARNING: $_\n" for @lines;
+    return;
+} ## end sub warning
+
 sub run_cmd {
     my %params        = @_;
     my $cmd           = $params{'cmd'};
@@ -170,13 +178,13 @@ sub run_cmd {
     while (<$_stdout>) {
         chomp;
         debug("stdout: " . $_);
-        /WARNING:/ and print STDERR $_ . "\n";
+        /WARNING: (.+)/ and warning(2, "btrfs-progs: $1");
         push @stdout, $_;
     } ## end while (<$_stdout>)
     while (<$_stderr>) {
         chomp;
         debug("stderr: " . $_);
-        /WARNING: (?!RAID56 detected, not implemented)/ and print STDERR $_ . "\n";
+        /WARNING: (RAID56 detected, not implemented)/ and warning(2, "btrfs-progs: $1");
         if (!$silent_stderr) {
             print join(' ', @$cmd) . ": stderr: " . $_ . "\n";
         }
@@ -690,7 +698,7 @@ foreach my $fuuid (keys %filesystems) {
     $profile = $opt_profile if defined $opt_profile;
 
     if (!$profile) {
-        print STDERR "WARNING: No profile found, assuming single\n";
+        warning(2, "No profile found, assuming single");
         $profile = "single";
     }
 
@@ -838,7 +846,7 @@ foreach my $fuuid (keys %filesystems) {
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs quota rescan -s }, $mp]);
     if ($cmd->{stdout}->[0] && $cmd->{stdout}->[0] =~ /operation running|current key/) {
-        print STDERR "WARNING: a quota rescan is running, size information is not correct yet\n" if not $opt_quiet;
+        warning(1, "a quota rescan is running, size information is not correct yet");
     }
 
     $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre --raw }, $mp]);
@@ -847,8 +855,7 @@ foreach my $fuuid (keys %filesystems) {
         # btrfs-progs v3.18 doesn't support --raw
         $cmd = run_cmd(silent_stderr => 1, cmd => [qw{ btrfs qgroup show -pcre }, $mp]);
         if ($cmd->{status} || !@{$cmd->{stdout}}) {
-            print STDERR "WARNING: to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)\n"
-              if not $opt_quiet;
+            warning(1, "to get refer/excl size information, please enable qgroups (btrfs quota enable $mp)");
             $vol{$fuuid}{df}{noquota} = 1;
         }
     } ## end if ($cmd->{status} || ...)
@@ -1009,7 +1016,7 @@ foreach my $fuuid (sort keys %filesystems) {
     # do we still have unseen volumes? (we shouldn't)
     foreach my $vuuid (keys %{$vol{$fuuid}}) {
         next if $seen{$vuuid};
-        print STDERR "WARN: we shouldn't have orphaned volumne $vuuid\n";
+        warning(2, "we shouldn't have orphaned volumne $vuuid");
         push @ordered, $vuuid;
     }
 

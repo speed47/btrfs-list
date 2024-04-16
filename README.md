@@ -1,6 +1,6 @@
 # Overview
 
-Btrfs is a great filesystem, but its userland tools are not very user-frienfly yet.
+Btrfs is a great filesystem, but its userland tools are not very user-friendly yet.
 As a long-time user, I've developed `btrfs-list` as a wrapper to make sense out of the `btrfs sub list` and `btrfs qgroup show` commands.
 
 You need `btrfs-list` if either:
@@ -28,7 +28,8 @@ If no mountpoints are specified, display info for all btrfs filesystems.
 
   -h, --help                 display this message
       --debug                enable debug output
-  -q, --quiet                silence the quota disabled & quota rescan warnings
+  -q, --quiet                silence quota disabled & quota rescan warnings,
+                               repeat to silence all other warnings.
       --version              display version info
       --color WHEN           colorize the output; WHEN can be 'never',
                                'always', or 'auto' (default is:
@@ -50,6 +51,7 @@ If no mountpoints are specified, display info for all btrfs filesystems.
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up more space than SIZE
   -f, --free-space           only show free space on the filesystem
+  -u, --used                 display used space instead of free space
 
   -p, --profile PROFILE      override data profile detection and consider it
                                 as 'dup', 'single', 'raid0', 'raid1',
