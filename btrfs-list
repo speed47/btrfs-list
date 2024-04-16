@@ -452,6 +452,15 @@ if (version->declare($version)->numify lt version->declare("3.18")->numify && !$
     exit 1;
 } ## end if (version->declare($version...))
 
+if ($version_verbatim eq '6.1' && !$opt_ignore_version_check) {
+    warning(2,
+        "the btrfs-progs version you're using, " . "v$version_verbatim, is known to be missing subvolume uuids.");
+}
+elsif ($version_verbatim eq '5.15' && !$opt_ignore_version_check) {
+    warning(2,
+        "the btrfs-progs version you're using, " . "v$version_verbatim, is known to report free fs space incorrectly.");
+}
+
 if ($< != 0 && !$opt_ignore_root_check) {
     print STDERR "FATAL: you must be root to use this command\n";
     print STDERR "If you think this is in error, use --ignore-root-check\n";
