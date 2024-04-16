@@ -73,6 +73,7 @@ If no mountpoints are specified, display info for all btrfs filesystems.
       --snap-max-excl SIZE   hide snapshots whose exclusively allocated extents
                                take up more space than SIZE
   -f, --free-space           only show free space on the filesystem
+  -u, --used                 display used space instead of free space
 
   -p, --profile PROFILE      override data profile detection and consider it
                                 as 'dup', 'single', 'raid0', 'raid1',
@@ -138,6 +139,7 @@ GetOptions(
     'r|raw'                         => \my $opt_raw,
     'btrfs-binary=s'                => \my $opt_btrfs_binary,
     'd|deleted'                     => \my $opt_deleted,
+    'u|used'                        => \my $opt_used,
 ) or die "FATAL: Error parsing arguments, aborting\n";
 
 $opt_quiet ||= 0;
@@ -1118,13 +1120,25 @@ foreach my $line (@orderedAll) {
     if (exists $line->{free}) {
         my $displayProfile = $line->{profile};
         $displayProfile .= "/" . $line->{mprofile} if ($line->{profile} ne $line->{mprofile});
-        $extra = sprintf(
-            "(%s, %s/%s free, %.02f%%",
-            $displayProfile,
-            pretty_print_str($line->{free},   2),
-            pretty_print_str($line->{fssize}, 2),
-            $line->{free} * 100 / $line->{fssize}
-        );
+        if (!$opt_used) {
+            $extra = sprintf(
+                "(%s, %s/%s free, %.02f%%",
+                $displayProfile,
+                pretty_print_str($line->{free},   2),
+                pretty_print_str($line->{fssize}, 2),
+                $line->{free} * 100 / $line->{fssize}
+            );
+        } ## end if (!$opt_used)
+        else {
+            my $used = $line->{fssize} - $line->{free};
+            $extra = sprintf(
+                "(%s, %s/%s used, %.02f%%",
+                $displayProfile,
+                pretty_print_str($used,           2),
+                pretty_print_str($line->{fssize}, 2),
+                $used * 100 / $line->{fssize}
+            );
+        } ## end else [ if (!$opt_used) ]
         if ($line->{unallocatable} && $line->{unallocatable} > MiB) {
             $extra .= sprintf(', %s unallocatable', pretty_print_str($line->{unallocatable}, 2));
         }
