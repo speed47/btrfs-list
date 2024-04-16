@@ -140,6 +140,8 @@ GetOptions(
     'd|deleted'                     => \my $opt_deleted,
 ) or die "FATAL: Error parsing arguments, aborting\n";
 
+$opt_quiet ||= 0;
+
 sub debug {
     return if !$opt_debug;
     print STDERR $_ . "\n" for @_;
@@ -556,6 +558,11 @@ foreach (@fishow) {
         my ($devid, $size, $dev) = ($1, human2raw($2), $3);
         if (not exists $filesystems{$fuuid}) {
             $filesystems{$fuuid} = {uuid => $fuuid, label => $label, devices => [], devinfo => {}};
+        }
+        # btrfs-progs v5.10.1 bug workaround: "dm-X" instead of "/dev/dm-X"
+        if ($dev && $dev =~ m{^dm-}) {
+            debug("Applying workaround $dev => /dev/$dev");
+            $dev = "/dev/$dev";
         }
         if (-l $dev) {
             $dev = link2real($dev);
