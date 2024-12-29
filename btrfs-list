@@ -171,7 +171,14 @@ sub run_cmd {
     my ($_stdin, $_stdout, $_stderr);
     $_stderr = gensym;
     debug("about to run_cmd ['" . join("','", @$cmd) . "']");
-    my $pid = open3($_stdin, $_stdout, $_stderr, @$cmd);
+    my $pid = eval { open3($_stdin, $_stdout, $_stderr, @$cmd); };
+    if ($@) {
+        if ($fatal) {
+            print STDERR "FATAL: failed to run [" . join(' ', @$cmd) . "] ($@)\n";
+            exit 1;
+        }
+        return {status => -1, stdout => [], stderr => []};
+    } ## end if ($@)
     debug("waiting for cmd to complete...");
     my @stdout = ();
     my @stderr = ();
@@ -243,9 +250,29 @@ sub pretty_print {
     my $bright = ($opt_bright ? 'bright_' : '');
     CORE::state($nbcolors, $dark);
     if (!defined $nbcolors) {
+        # try to use tput if we happen to have it
         my $cmd = run_cmd(cmd => [qw{ tput colors }], silent_stderr => 1);
-        $nbcolors = $cmd->{stdout}->[0];
-        chomp $nbcolors;
+        if ($cmd->{'status'} == -1 || !@{$cmd->{stdout}}) {
+            # we don't have tput, get info from env instead
+            if ($ENV{'TERM'}) {
+                if ($ENV{'TERM'} =~ /256/) {
+                    $nbcolors = 256;
+                }
+                elsif ($ENV{'TERM'} =~ /dumb/) {
+                    $nbcolors = -1;
+                }
+                else {
+                    $nbcolors = 8;
+                }
+            } ## end if ($ENV{'TERM'})
+            else {
+                $nbcolors = -1;
+            }
+        } ## end if ($cmd->{'status'} ==...)
+        else {
+            $nbcolors = $cmd->{stdout}->[0];
+            chomp $nbcolors;
+        }
         $nbcolors = 8 if !$nbcolors;
         debug("nbcolors=$nbcolors");
         $dark = ($nbcolors <= 8 ? "${bright}black" : 'grey9');

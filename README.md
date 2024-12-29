@@ -16,7 +16,6 @@ into this:
 ![btrfs_list](https://user-images.githubusercontent.com/218502/53362048-965b5d80-3939-11e9-8e2f-8f92c7db79e4.PNG)
 
 # Prerequisites
-- `ncurses` for `tput`
 - `btrfs-progs` v3.18 at least (Dec 2014)
 - The _quota_ feature enabled on your Btrfs filesystems (optional, to get space usage for subvolumes and snapshots)
 
